@@ -11,7 +11,7 @@
 .patch-toolbar .ant-input-affix-wrapper{max-width:220px}
 .universe-grid{grid-template-columns:repeat(32,minmax(24px,1fr));grid-auto-rows:24px}
 
-/* ABSOLUTE LAST MVR OVERRIDES â€” must stay at EOF. */
+/* ABSOLUTE LAST MVR OVERRIDES â€?must stay at EOF. */
 .mvr-mode .mvr-overlay{
   top:50px!important;
   bottom:40px!important;
@@ -48,7 +48,7 @@
 .mvr-mode .dmxlib-body{
   width:100%!important;
   display:grid!important;
-  grid-template-columns:minmax(460px,min(var(--mvr-left-width,580px),38vw)) 6px minmax(0,1fr)!important;
+  grid-template-columns:minmax(500px,55%) 0px minmax(0,1fr)!important;
   gap:0!important;
   height:calc(100% - 52px)!important;
   min-width:0!important;
@@ -257,7 +257,7 @@
 }
 .dmxlib-body{
   display:grid!important;
-  grid-template-columns:var(--mvr-left-width,310px) 8px minmax(0,1fr)!important;
+  grid-template-columns:minmax(500px,55%) 0px minmax(0,1fr)!important;
   gap:0!important;
   height:calc(100% - 50px)!important;
   min-width:0!important;
@@ -368,7 +368,7 @@
   pointer-events:none!important;
 }
 
-/* FINAL MVR UE-STYLE LAYOUT â€” match UE DMXLibrary density and drag bars. */
+/* FINAL MVR UE-STYLE LAYOUT â€?match UE DMXLibrary density and drag bars. */
 .mvr-mode header .toolbar{
   gap:8px!important;
 }
@@ -399,7 +399,7 @@
   color:#77bed8!important;
 }
 .dmxlib-body{
-  grid-template-columns:var(--mvr-left-width,580px) 6px minmax(0,1fr)!important;
+  grid-template-columns:minmax(500px,55%) 0px minmax(0,1fr)!important;
   height:calc(100% - 52px)!important;
 }
 .patch-panel{
@@ -544,10 +544,10 @@
   display:none!important;
 }
 .dmxlib-body{
-  grid-template-columns:minmax(460px,min(var(--mvr-left-width,580px),38vw)) 6px minmax(0,1fr)!important;
+  grid-template-columns:minmax(500px,55%) 0px minmax(0,1fr)!important;
 }
 
-/* FINAL UI PASS â€” UE-like MVR patching surface */
+/* FINAL UI PASS â€?UE-like MVR patching surface */
 .shell>.workspace-switch{
   top:8px!important;
   left:50%!important;
@@ -701,7 +701,7 @@
 
 .universe-head .ant-checkbox-wrapper{display:none!important}
 
-/* FINAL PATCH BAR GEOMETRY â€” fixed UE-like cells, bars cover exact footprint. */
+/* FINAL PATCH BAR GEOMETRY â€?fixed UE-like cells, bars cover exact footprint. */
 .universe-grid{
   grid-template-columns:repeat(32,34px)!important;
   grid-auto-rows:24px!important;
@@ -765,3 +765,4 @@
 .universe-grid{grid-template-columns:repeat(32,minmax(24px,1fr));grid-auto-rows:24px}
 
 /* Mode editor */.mode-field-row{display:flex;gap:6px;align-items:center}.mode-field-row .ant-select{flex:1}.mode-editor{max-height:50vh;overflow:auto}.mode-row{display:grid;grid-template-columns:1fr 80px 82px 36px;gap:8px;align-items:center;padding:8px;border-bottom:1px solid #243138}.mode-row.active{background:#1f2b1f}.mode-row .ant-tag{margin:0}/* Patch row perf */.patch-row{contain:layout style;content-visibility:auto}
+/* Hide resizer */.mvr-resizer,.mvr-resizer:hover{display:none!important}

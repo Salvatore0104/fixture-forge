@@ -94,9 +94,8 @@ function Workbench(){
   const [editingModeName,setEditingModeName]=useState('');
   const [universeView,setUniverseView]=useState(1);
   const [mvrDraftReady,setMvrDraftReady]=useState(false);
-  const [mvrPatchWidth,setMvrPatchWidth]=useState(()=>Math.max(560,Math.min(680,Number(localStorage.getItem('fixture-forge:mvr-patch-width')||580))));
-  const [dragFixtureId,setDragFixtureId]=useState<string>();
-  const [addPatchOpen,setAddPatchOpen]=useState(false);
+ const [dragFixtureId,setDragFixtureId]=useState<string>();
+ const [addPatchOpen,setAddPatchOpen]=useState(false);
   const [addPatch,setAddPatch]=useState({fixtureId:'',modeName:'',prefix:'Fixture',universe:1,address:1,quantity:1,increment:true});
   const [mvrImportFile,setMvrImportFile]=useState<File>();
   const [mvrImportOptions,setMvrImportOptions]=useState<MvrImportOption[]>([]);
@@ -161,8 +160,7 @@ function Workbench(){
     localStorage.setItem('fixture-forge:mvr-draft',JSON.stringify({sceneName,items:mvrItems,universeView,selectedPatch}));
   },[mvrDraftReady,sceneName,mvrItems,universeView,selectedPatch]);
 
-  useEffect(()=>localStorage.setItem('fixture-forge:mvr-patch-width',String(mvrPatchWidth)),[mvrPatchWidth]);
-  useEffect(()=>localStorage.setItem('fixture-forge:workspace',workspace),[workspace]);
+ useEffect(()=>localStorage.setItem('fixture-forge:workspace',workspace),[workspace]);
 
   useEffect(()=>{
     const valid=new Set(mvrItems.map(item=>item.id));
@@ -657,7 +655,7 @@ function Workbench(){
           <div><h2>UE DMX Library · 灯具配接</h2><p>左侧灯具库可点击或拖入；拖动 Universe 条可调整起始通道；生成 MVR 会写入 Fixture Type 与地址。</p></div>
           <Tag color="green">{mvrItems.length} 个配接规划</Tag>
         </div>
-        <div className="dmxlib-body" style={{'--mvr-left-width':`${mvrPatchWidth}px`} as React.CSSProperties}>
+        <div className="dmxlib-body">
           <div className="patch-panel">
             <div className="patch-toolbar"><Button type="primary" icon={<PlusOutlined/>} disabled={!fixtures.length} onClick={()=>openAddPatch()}>添加Fixture</Button><Input prefix={<SearchOutlined/>} placeholder="搜索配接…"/></div>
             <div className="patch-table">
@@ -678,8 +676,7 @@ function Workbench(){
               {!mvrItems.length&&<Empty description="从左侧灯具库拖入或点击添加 Fixture"/>}
             </div>
           </div>
-          <div className="mvr-resizer" onPointerDown={e=>{const start=e.clientX;const initial=mvrPatchWidth;const move=(ev:PointerEvent)=>setMvrPatchWidth(Math.max(520,Math.min(760,initial+ev.clientX-start)));const up=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)};window.addEventListener('pointermove',move);window.addEventListener('pointerup',up)}}/>
-          <div className="universe-panel">
+         <div className="universe-panel">
             <div className="universe-head"><span>本地 Universe</span><Button size="small" disabled={universeView<=1} onClick={()=>setUniverseView(Math.max(1,universeView-1))}>上一域</Button><InputNumber min={1} max={256} value={universeView} onChange={v=>setUniverseView(Math.max(1,Math.min(256,v||1)))}/><span>/ 256</span><Button size="small" disabled={universeView>=256} onClick={()=>setUniverseView(Math.min(256,universeView+1))}>下一域</Button><Checkbox>只显示冲突</Checkbox><Checkbox>显示所有带配接的域</Checkbox></div>
             <div ref={universeGridRef} className="universe-grid">
               {Array.from({length:512},(_,i)=>i+1).map(ch=><div key={ch} data-channel={ch} className={`universe-cell ${occupiedUniverseChannels.has(ch)?'occupied':''}`} title={`CH ${ch}`} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/patch-id');if(id){patchMvrItem(id,{universe:universeView,address:ch});setSelectedPatch(id)}}}><span>{ch}</span></div>)}

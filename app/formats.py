@@ -155,7 +155,18 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
     """Build an MVR scene with embedded GDTF fixture types and fixture patch addresses."""
     root=etree.Element('GeneralSceneDescription',verMajor='1',verMinor='5')
     user=etree.SubElement(root,'UserData'); data=etree.SubElement(user,'Data',provider='FixtureForge',ver='1.0'); etree.SubElement(data,'CreationDate').text=datetime.now().strftime('%Y.%m.%d-%H.%M.%S')
-    scene=etree.SubElement(root,'Scene'); layers=etree.SubElement(scene,'Layers'); layer=etree.SubElement(layers,'Layer',uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS,scene_name+'-layer')).upper()); children=etree.SubElement(layer,'ChildList')
+    scene=etree.SubElement(root,'Scene')
+    # Declare all unique universes used in this scene (required by UE 5.7+)
+    universe_set=set()
+    for uni_item in items:
+        uni_item_u=max(1,min(256,int(uni_item.get('universe') or 1)))
+        universe_set.add(uni_item_u)
+    universes_el=etree.SubElement(scene,'Universes')
+    for uni_num in sorted(universe_set):
+        uni_el=etree.SubElement(universes_el,'Universe')
+        etree.SubElement(uni_el,'UniverseNumber').text=str(uni_num)
+        etree.SubElement(uni_el,'Name').text=f'Universe {uni_num}'
+    layers=etree.SubElement(scene,'Layers'); layer=etree.SubElement(layers,'Layer',uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS,scene_name+'-layer')).upper()); children=etree.SubElement(layer,'ChildList')
     gdtf_files={}
     for index,item in enumerate(items,start=1):
         fixture_doc=fixtures[item['fixtureId']]
