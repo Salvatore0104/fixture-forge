@@ -184,9 +184,9 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         mode_name=item.get('modeName')
         mode=next((m for m in fixture_doc.modes if m.name==mode_name),fixture_doc.modes[0]) if fixture_doc.modes else None
         footprint=max((ch.address+ch.resolution//8-1 for ch in (mode.channels if mode else [])),default=1)
-        address=etree.SubElement(addresses,'Address',break_=str(footprint),universe=str(max(1,min(256,int(item.get('universe') or 1)))))
+        address=etree.SubElement(addresses,'Address',attrib={'Break':str(footprint),'Universe':str(max(1,min(256,int(item.get('universe') or 1))))})
         address.text=str(max(1,min(512,int(item.get('address') or 1))))
-    xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True).replace(b'break_=',b'break=')
+    xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True).replace(b'break_=',b'Break=')
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('GeneralSceneDescription.xml',xml)
