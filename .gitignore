@@ -1,0 +1,11 @@
+node_modules/
+.vite/
+__pycache__/
+*.pyc
+.venv/
+backend/
+extract_tmp/
+api.tar
+web.tar
+dist/
+*.db

@@ -1,0 +1,303 @@
+@tailwind base;@tailwind components;@tailwind utilities;
+.workspace-switch{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:8px}.mvr-mode header .current{visibility:hidden}.mvr-mode .fixture-card{cursor:grab}.mvr-mode .fixture-card:active{cursor:grabbing}.mvr-filename{width:220px!important}.mvr-overlay{position:fixed;z-index:20;left:280px;right:0;top:62px;bottom:58px;background:#091013;display:grid;grid-template-columns:minmax(460px,min(var(--mvr-left-width,580px),38vw)) 6px minmax(0,1fr) !important}.patch-thumb,.patch-image-box{border:1px solid #28505d;background:#071014;color:#73a9bd;display:flex;align-items:center;justify-content:center;overflow:hidden}.patch-thumb{width:34px;height:28px;border-radius:4px}.patch-thumb img{width:100%;height:100%;object-fit:cover}.patch-image-box{height:120px;border-radius:7px;margin-bottom:12px;position:relative}.patch-image-box img{width:100%;height:100%;object-fit:cover}.patch-image-box .ant-input{position:absolute;left:8px;right:8px;bottom:8px;width:calc(100% - 16px);background:rgba(5,8,10,.82)}.universe-grid{height:calc(100% - 84px);overflow:auto;display:grid;grid-template-columns:repeat(32,minmax(28px,1fr));grid-auto-rows:25px;gap:1px;padding:8px;background:#171b1e}.universe-cell{background:#222629;color:#c7ced2;font-size:10px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.universe-cell.used{color:#061014;font-weight:700}.universe-cell b{position:absolute;left:3px;right:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mvr-type-note{display:flex;gap:12px;align-items:flex-start;margin-top:10px;padding:10px;border:1px solid #28513d;border-radius:7px;background:#0c1c16;color:#55d68b}.mvr-type-note p{margin:4px 0 0;color:#91a69a}.add-patch-form label{display:block;color:#849097;font-size:12px;margin:10px 0}.add-patch-form label>.ant-input,.add-patch-form label>.ant-select,.add-patch-form label>.ant-input-number{display:block;margin-top:5px}.name-preview{border:1px solid #243742;background:#0b1519;color:#f5b800;padding:8px 10px;border-radius:5px;margin:8px 0}.add-patch-bottom{align-items:end}.mvr-import{max-height:58vh;overflow:auto}.mvr-import-row{display:grid;grid-template-columns:28px 1fr 78px 86px 1.2fr;gap:10px;align-items:center;padding:9px;border-bottom:1px solid #243138;color:#c5cdd1}.mvr-import-row strong,.mvr-import-row span{display:block}.mvr-import-row span{font-size:12px;color:#89949a}.mvr-import-row code{color:#79b7ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:root{font-family:Inter,"Microsoft YaHei",sans-serif;color:#d9dee3;background:#080c0e;font-synthesis:none}*{box-sizing:border-box}body{margin:0;min-width:1180px;min-height:100vh;overflow:hidden}.loading{height:100vh;display:grid;place-items:center;color:#7d8790}.shell{height:100vh;display:grid;grid-template-columns:minmax(460px,min(var(--mvr-left-width,580px),38vw)) 6px minmax(0,1fr) !important}.ok{color:#67d79c}.editor-head{display:flex;gap:10px;align-items:center}.editor-head>div{margin-right:auto}.editor-head small{color:#77838a}.editor-head .ant-input-affix-wrapper{width:260px}.table-wrap{background:#0c1215;border:1px solid #28343a;border-radius:7px;overflow:auto;flex:1}table{border-collapse:collapse;width:100%;min-width:900px}th{position:sticky;top:0;background:#151d21;color:#8e999f;font-size:11px;text-align:left;padding:10px;border-bottom:1px solid #344147;z-index:1}td{padding:5px 9px;border-bottom:1px solid #273238;color:#c8cfd3;font-size:12px}tr:hover td{background:#152025}tr.selected td{background:#342b12;border-top:1px solid #d59e00;border-bottom:1px solid #d59e00}.table-wrap .ant-select{min-width:165px}.table-wrap .ant-input{min-width:120px}.right label,.custom-form label{display:block;color:#849097;font-size:12px;margin:12px 0}.right label>.ant-input,.right label>.ant-select,.right label>.ant-input-number,.custom-form label>.ant-input,.custom-form label>.ant-select{display:block;width:100%;margin-top:5px}.selected-name{color:#f5b800;font-weight:700;margin:8px 0 18px}.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.right .ant-btn{margin:5px 0}.manager-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:#89949a}.attribute-manager{max-height:62vh;overflow:auto;padding-right:5px}.attribute-manager section{border:1px solid #29353b;border-radius:6px;margin-bottom:10px;overflow:hidden}.attribute-manager h4{margin:0;padding:9px 12px;background:#131c20;color:#f1c232}.attribute-manager h4 small{color:#8d999f;margin-left:8px}.attribute-row{display:grid;grid-template-columns:150px 1fr 1.2fr 145px;align-items:center;gap:10px;padding:7px 12px;border-top:1px solid #202b30}.attribute-row code{color:#77b7ff}.attribute-row>span{color:#bbc4c9}.attribute-row>div{display:flex;gap:5px}.attribute-row .ant-tag{justify-self:start}footer{grid-column:1/4;border-top:1px solid #28343a;background:#090d0f;display:flex;align-items:center;gap:40px;padding:0 20px;font-size:13px}.valid{color:#67d79c}.invalid{color:#ff747d}footer>div:last-child{margin-left:auto;color:#8d979d}
+:root{}
+
+/* MVR layout refinements: prevent grid columns from overlapping at smaller widths. */
+.mvr-overlay{grid-template-columns:minmax(0,1fr) 340px}
+.mvr-main,.mvr-inspector,.patch-panel,.universe-panel{min-width:0}
+.dmxlib-body{grid-template-columns:minmax(500px,44%) minmax(0,1fr);min-width:0}
+.patch-row{grid-template-columns:38px minmax(130px,1fr) 64px minmax(130px,1fr) minmax(90px,.75fr) 72px 34px;gap:5px;padding:4px 6px;min-width:720px}
+.patch-toolbar .ant-input-affix-wrapper{max-width:220px}
+.universe-grid{grid-template-columns:repeat(32,minmax(24px,1fr));grid-auto-rows:24px}
+
+/* ABSOLUTE LAST MVR OVERRIDES — must stay at EOF. */
+.mvr-mode .mvr-overlay{
+}
+.mvr-mode .mvr-inspector{
+}
+.mvr-mode .mvr-main{
+}
+.mvr-mode .dmxlib-top{
+}
+.mvr-mode .dmxlib-top h2{font-size:16px!important;line-height:22px!important}
+.mvr-mode .dmxlib-top p{
+}
+.mvr-mode .dmxlib-body{
+}
+.mvr-mode .patch-panel,
+.mvr-mode .universe-panel{
+}
+.mvr-mode .patch-toolbar{
+}
+.mvr-mode .patch-toolbar .ant-input-affix-wrapper{
+}
+.mvr-mode .patch-table{
+}
+.mvr-mode .patch-row{
+}
+.mvr-mode .patch-row.header{
+}
+.mvr-mode .universe-head{
+}
+.mvr-mode .universe-grid{
+}
+.mvr-mode .universe-cell{
+}
+.mvr-mode .universe-cell.occupied span{
+}
+.mvr-mode .universe-bar{
+}
+.mvr-mode .universe-bar:hover{opacity:.72!important}
+.mvr-mode .universe-bar.selected{
+}
+/* MVR interaction polish: UE-like selection, no accidental text selection, wider FID. */
+.mvr-mode,
+.mvr-mode *{
+}
+.mvr-mode input,
+.mvr-mode textarea{
+}
+.mvr-mode .patch-row{
+}
+.mvr-mode .patch-row.editing{
+}
+.mvr-mode .patch-row .ant-input[disabled],
+.mvr-mode .patch-row .ant-input-number-disabled,
+.mvr-mode .patch-row .ant-select-disabled .ant-select-selector{
+}
+.mvr-mode .patch-row .ant-select-disabled .ant-select-arrow{
+}
+.mvr-mode .patch-row .ant-input-number-disabled input{
+}
+.mvr-mode .patch-row.selected:not(.editing){
+}
+.mvr-mode .patch-row:not(.editing) .ant-input,
+.mvr-mode .patch-row:not(.editing) .ant-input-number,
+.mvr-mode .patch-row:not(.editing) .ant-select,
+.mvr-mode .patch-row:not(.editing) .ant-btn{
+}
+.mvr-mode .universe-panel{
+}
+.mvr-mode .universe-grid{
+}
+.mvr-mode .universe-bar{
+}
+/* FINAL UE DMX LIBRARY PASS
+   Keep these rules last: the patch bar is an overlay, cells stay fixed, and
+   the bar footprint must match exactly the number of occupied DMX channels. */
+.shell>.workspace-switch{
+}
+.shell>.workspace-switch .ant-btn{
+}
+.shell>.workspace-switch .ant-btn-primary{
+}
+.mvr-overlay{
+}
+.mvr-main{
+}
+.mvr-inspector{
+}
+.dmxlib-top{
+}
+.dmxlib-body{
+}
+.patch-panel,.universe-panel{
+}
+.patch-toolbar{
+}
+.patch-toolbar .ant-input-affix-wrapper{
+}
+.patch-table{
+}
+.patch-row{
+}
+.patch-row.header{
+}
+.patch-row.header span{
+}
+.universe-head{
+}
+.universe-grid{
+}
+.universe-cell{
+}
+.universe-cell.occupied span{
+}
+.universe-bar{
+}
+.universe-bar:hover{
+}
+.universe-bar.selected{
+}
+.universe-bar b{
+}
+/* FINAL MVR UE-STYLE LAYOUT — match UE DMXLibrary density and drag bars. */
+.mvr-mode header .toolbar{
+}
+.mvr-mode header .toolbar .ant-btn{
+}
+.mvr-overlay{
+}
+.mvr-main{
+}
+.dmxlib-top{
+}
+.dmxlib-top h2{
+}
+.dmxlib-top p{
+}
+.dmxlib-body{
+}
+.patch-panel{
+}
+.patch-toolbar{
+}
+.patch-toolbar .ant-input-affix-wrapper{
+}
+.patch-table{
+}
+.patch-row{
+}
+.patch-row.header{
+}
+.patch-row.selected{
+}
+.patch-row .ant-input,
+.patch-row .ant-input-number,
+.patch-row .ant-select-selector{
+}
+.patch-row .ant-input-number-input{
+}
+.universe-panel{
+}
+.universe-head{
+}
+.universe-head .ant-input-number{
+}
+.universe-grid{
+}
+.universe-cell{
+}
+.universe-cell.occupied span{
+}
+.universe-bar{
+}
+.universe-bar:hover{
+}
+.universe-bar:active{
+}
+.universe-bar.selected{
+}
+.mvr-inspector{
+}
+/* Match the supplied UE reference: MVR editor uses the full right side; no detail sidebar squeeze. */
+.mvr-overlay{
+}
+.mvr-mode .mvr-inspector{
+}
+.dmxlib-body{
+}
+/* FINAL UI PASS — UE-like MVR patching surface */
+.shell>.workspace-switch{
+}
+.shell>.workspace-switch .ant-btn{
+}
+.shell>.workspace-switch .ant-btn-primary{
+}
+.mvr-mode header{
+}
+.mvr-mode header .brand{opacity:.95!important}
+.mvr-overlay{
+}
+.mvr-main{padding:8px!important;overflow:hidden!important}
+.dmxlib-top{
+}
+.dmxlib-top h2{font-size:15px!important;line-height:18px!important}
+.dmxlib-top p{font-size:12px!important;margin:2px 0 0!important;color:#7f99a3!important}
+.dmxlib-body{
+}
+.patch-panel,.universe-panel{height:100%!important;min-height:0!important;background:#0b1114!important}
+.patch-row{
+}
+.patch-row.header{
+}
+.patch-row.header span{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.patch-row.selected{background:rgba(119,88,0,.42)!important;outline:1px solid #d7a600!important}
+.patch-row .ant-input,.patch-row .ant-select-selector,.patch-row .ant-input-number{
+}
+.universe-head{
+}
+.universe-grid{
+}
+.universe-cell{
+}
+.universe-bar{
+}
+.universe-bar:hover{opacity:.88!important}
+.universe-bar:active{cursor:grabbing!important}
+.universe-bar.selected{
+}
+.universe-bar b{pointer-events:none!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.mvr-inspector{
+}
+.left,.right,.mvr-main,.mvr-inspector,.patch-table,.universe-grid,.attribute-manager{
+}
+.left::-webkit-scrollbar,.right::-webkit-scrollbar,.mvr-main::-webkit-scrollbar,.mvr-inspector::-webkit-scrollbar,.patch-table::-webkit-scrollbar,.universe-grid::-webkit-scrollbar,.attribute-manager::-webkit-scrollbar{width:10px;height:10px}
+.left::-webkit-scrollbar-track,.right::-webkit-scrollbar-track,.mvr-main::-webkit-scrollbar-track,.mvr-inspector::-webkit-scrollbar-track,.patch-table::-webkit-scrollbar-track,.universe-grid::-webkit-scrollbar-track,.attribute-manager::-webkit-scrollbar-track{background:#10171b}
+.left::-webkit-scrollbar-thumb,.right::-webkit-scrollbar-thumb,.mvr-main::-webkit-scrollbar-thumb,.mvr-inspector::-webkit-scrollbar-thumb,.patch-table::-webkit-scrollbar-thumb,.universe-grid::-webkit-scrollbar-thumb,.attribute-manager::-webkit-scrollbar-thumb{background:#6f7a80;border:2px solid #10171b;border-radius:8px}
+.mvr-type-note{display:none!important}
+
+.universe-head .ant-checkbox-wrapper{display:none!important}
+
+/* FINAL PATCH BAR GEOMETRY — fixed UE-like cells, bars cover exact footprint. */
+.universe-grid{
+}
+.universe-cell{
+}
+.universe-cell.occupied span{visibility:hidden!important}
+.universe-bar{
+}
+.universe-bar:hover{opacity:.84!important}
+.universe-bar.selected{opacity:.82!important}
+
+.patch-row{grid-template-columns:minmax(150px,1.25fr) 64px minmax(130px,1.25fr) minmax(92px,.9fr) 76px 34px;min-width:660px}
+.patch-thumb,.patch-image-box,.add-patch-bottom{display:none!important}
+.universe-grid{position:relative;grid-template-columns:repeat(32,minmax(30px,1fr));grid-auto-rows:26px;align-items:stretch}
+.universe-cell{z-index:1;border:1px solid rgba(255,255,255,.02);user-select:none}
+.universe-bar{z-index:2;min-width:0;height:100%;display:flex;align-items:center;padding:0 5px;border:1px solid rgba(255,255,255,.35);box-shadow:inset 0 0 0 1px rgba(0,0,0,.45);color:#061014;font-size:10px;font-weight:800;cursor:grab;overflow:hidden}
+.universe-bar:active{cursor:grabbing}
+.universe-bar b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
+.universe-bar.selected{outline:2px solid #ffd21f;outline-offset:-2px;box-shadow:0 0 0 2px rgba(255,210,31,.35),inset 0 0 0 1px rgba(0,0,0,.65)}
+
+.workspace-switch{position:fixed!important;top:9px!important;left:50%!important;transform:translateX(-50%)!important;z-index:45!important;padding:3px!important;border:1px solid #26363d!important;border-radius:10px!important;background:rgba(5,10,13,.92)!important;box-shadow:0 8px 22px rgba(0,0,0,.35)!important}
+.workspace-switch .ant-btn{height:30px!important;border:0!important;background:transparent!important;color:#9aa8af!important;border-radius:7px!important}
+.workspace-switch .ant-btn-primary{background:#13394a!important;color:#ffd21f!important;box-shadow:inset 0 0 0 1px #24677d!important}
+.add-patch-form .ant-checkbox-wrapper{display:flex!important;align-items:center!important;gap:8px!important;margin:10px 0!important}
+.add-patch-form .ant-checkbox{top:0!important}
+.mvr-overlay{top:50px!important;bottom:40px!important;grid-template-columns:minmax(0,1fr) 320px!important;overflow:hidden!important}
+.mvr-main{overflow:hidden!important;padding:10px!important}
+.dmxlib-top{height:42px!important;margin-bottom:8px!important;align-items:center!important}
+.dmxlib-top h2{font-size:16px!important}
+.dmxlib-top p{font-size:12px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:820px!important}
+.dmxlib-body{display:grid!important;gap:0!important;height:calc(100% - 50px)!important;min-height:0!important}
+.patch-panel,.universe-panel{min-height:0!important;height:100%!important}
+.patch-row{grid-template-columns:minmax(460px,min(var(--mvr-left-width,580px),38vw)) 6px minmax(0,1fr) !important;min-width:760px!important}
+.patch-row.header{align-items:center!important;white-space:nowrap!important}
+.patch-row.header span{overflow:hidden!important;text-overflow:ellipsis!important}
+.patch-table{height:calc(100% - 50px)!important}
+.universe-head{height:auto!important;min-height:42px!important;padding:6px 8px!important}
+.universe-grid{height:calc(100% - 44px)!important;grid-template-columns:repeat(32,minmax(32px,1fr))!important;grid-auto-rows:24px!important;gap:1px!important;align-content:start!important;overflow:auto!important}
+.universe-cell{z-index:1!important}
+.universe-bar{z-index:5!important;min-width:0!important;margin:2px!important;height:20px!important;border:2px solid #ffc400!important;color:#061014!important;cursor:grab!important}
+.universe-bar.selected{z-index:6!important;outline:2px solid #fff04a!important;outline-offset:-3px!important}
+.mvr-type-note{display:none!important}
+.mvr-inspector{overflow:auto!important}
+.mvr-overlay{grid-template-columns:minmax(0,1fr) 340px}
+.mvr-main,.mvr-inspector,.patch-panel,.universe-panel{min-width:0}
+.dmxlib-body{grid-template-columns:minmax(500px,44%) minmax(0,1fr);min-width:0}
+.patch-row{grid-template-columns:38px minmax(130px,1fr) 64px minmax(130px,1fr) minmax(90px,.75fr) 72px 34px;gap:5px;padding:4px 6px;min-width:720px}
+.patch-toolbar .ant-input-affix-wrapper{max-width:220px}
+.universe-grid{grid-template-columns:repeat(32,minmax(24px,1fr));grid-auto-rows:24px}
+
+
