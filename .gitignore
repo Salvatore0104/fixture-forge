@@ -7,5 +7,7 @@ backend/
 extract_tmp/
 api.tar
 web.tar
-dist/
 *.db
+# Keep dist (Docker build artifacts)
+!frontend/dist/
+!frontend/dist/**
