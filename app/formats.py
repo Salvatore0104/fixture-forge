@@ -128,8 +128,9 @@ def import_mvr_fixture_options(data: bytes):
         names={x.filename.replace('\\','/'):x.filename for x in archive.infolist()}
         gdtf_names=[name for name in names if name.lower().endswith('.gdtf')]
         ordered=[]
-        if 'GeneralSceneDescription.xml' in names:
-            root=etree.fromstring(archive.read(names['GeneralSceneDescription.xml']),etree.XMLParser(resolve_entities=False,no_network=True))
+        xml_key='MVR/GeneralSceneDescription.xml' if 'MVR/GeneralSceneDescription.xml' in names else 'GeneralSceneDescription.xml'
+        if xml_key in names:
+            root=etree.fromstring(archive.read(names[xml_key]),etree.XMLParser(resolve_entities=False,no_network=True))
             for spec in root.xpath('//*[local-name()="Fixture"]/*[local-name()="GDTFSpec"]/text()'):
                 candidate=spec if spec.lower().endswith('.gdtf') else spec+'.gdtf'
                 match=next((name for name in gdtf_names if name.lower()==candidate.lower() or name.lower().endswith('/'+candidate.lower())),None)
@@ -176,7 +177,7 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         patch_name=item.get('name') or f'{fixture_doc.name}_{index:04d}'
         fixture=etree.SubElement(children,'Fixture',name=patch_name,uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS,f'{scene_name}:{item.get("id",index)}:{patch_name}')).upper())
         etree.SubElement(fixture,'Matrix').text='{-1.000000,0.000000,0.000000}{0.000000,1.000000,0.000000}{-0.000000,0.000000,-1.000000}{0.000000,0.000000,0.000000}'
-        etree.SubElement(fixture,'GDTFSpec').text=gdtf_base
+        etree.SubElement(fixture,'GDTFSpec').text=gdtf_base+'.gdtf'
         etree.SubElement(fixture,'GDTFMode').text=item.get('modeName') or (fixture_doc.modes[0].name if fixture_doc.modes else 'Default')
         etree.SubElement(fixture,'FixtureID').text=str(item.get('fid') or index)
         etree.SubElement(fixture,'UnitNumber').text='0'
@@ -189,6 +190,6 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
     xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True).replace(b'break_=',b'Break=')
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('GeneralSceneDescription.xml',xml)
-        for base,gdtf in gdtf_files.items(): archive.writestr(base+'.gdtf',gdtf)
+        archive.writestr('MVR/GeneralSceneDescription.xml',xml)
+        for base,gdtf in gdtf_files.items(): archive.writestr('MVR/'+base+'.gdtf',gdtf)
     return out.getvalue()
