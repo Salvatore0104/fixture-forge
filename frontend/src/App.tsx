@@ -87,7 +87,11 @@ function Workbench(){
   const [selectedPatch,setSelectedPatch]=useState<string>();
   const [selectedPatchIds,setSelectedPatchIds]=useState<string[]>([]);
   const [patchSelectionAnchor,setPatchSelectionAnchor]=useState<string>();
-  const [editingPatchId,setEditingPatchId]=useState<string>();
+ const [editingPatchId,setEditingPatchId]=useState<string>();
+  const [editingPatchName,setEditingPatchName]=useState('');
+  const [modeEditorOpen,setModeEditorOpen]=useState(false);
+  const [editingModeId,setEditingModeId]=useState<string>();
+  const [editingModeName,setEditingModeName]=useState('');
   const [universeView,setUniverseView]=useState(1);
   const [mvrDraftReady,setMvrDraftReady]=useState(false);
   const [mvrPatchWidth,setMvrPatchWidth]=useState(()=>Math.max(560,Math.min(680,Number(localStorage.getItem('fixture-forge:mvr-patch-width')||580))));
@@ -97,7 +101,17 @@ function Workbench(){
   const [mvrImportFile,setMvrImportFile]=useState<File>();
   const [mvrImportOptions,setMvrImportOptions]=useState<MvrImportOption[]>([]);
   const [mvrImportSelected,setMvrImportSelected]=useState<number[]>([]);
-  const [mvrImportOpen,setMvrImportOpen]=useState(false);
+ const [mvrImportOpen,setMvrImportOpen]=useState(false);
+  useEffect(()=>{
+    if(!editingPatchId)return;
+    const handler=(e:PointerEvent)=>{
+      const target=e.target as HTMLElement;
+      if(target.closest('.patch-row.editing')||target.closest('.ant-select-dropdown')||target.closest('.ant-modal'))return;
+      setEditingPatchId(undefined);
+    };
+    window.addEventListener('pointerdown',handler,true);
+    return()=>window.removeEventListener('pointerdown',handler,true);
+  },[editingPatchId]);
 
   const fileRef=useRef<HTMLInputElement>(null);
   const mvrFileRef=useRef<HTMLInputElement>(null);
@@ -442,12 +456,37 @@ function Workbench(){
   const startPatchDrag=(id:string,e:React.PointerEvent<HTMLDivElement>)=>{
     e.preventDefault();
     e.stopPropagation();
-    setPatchSelection(selectedPatchIds.includes(id)?selectedPatchIds:[id]);
+    const draggedIds=selectedPatchIds.includes(id)?selectedPatchIds:[id];
+    setPatchSelection(draggedIds);
     setPatchSelectionAnchor(id);
     setSelectedPatch(id);
+    const draggedItem=mvrItems.find(x=>x.id===id);
+    if(!draggedItem)return;
+    const startAddress=draggedItem.address;
+    const origins=draggedIds.map(did=>{
+      const item=mvrItems.find(x=>x.id===did);
+      return item?{id:did,address:item.address,universe:item.universe}:null;
+    }).filter(Boolean) as {id:string;address:number;universe:number}[];
     const move=(ev:PointerEvent)=>{
-      const address=addressFromPointer(ev.clientX,ev.clientY);
-      if(address)patchMvrItem(id,{universe:universeView,address});
+      const addr=addressFromPointer(ev.clientX,ev.clientY);
+      if(!addr)return;
+      const delta=addr-startAddress;
+      setMvrItems(items=>items.map(item=>{
+        const origin=origins.find(o=>o.id===item.id);
+        if(!origin)return item;
+        const newAddress=Math.max(1,Math.min(512,origin.address+delta));
+        const footprint=fixtureFootprint(fixtures.find(f=>f.id===item.fixtureId),item.modeName);
+        let universe=origin.universe;
+        let finalAddress=newAddress;
+        if(newAddress+footprint-1>512&&universe<256){
+          universe+=1;
+          finalAddress=1;
+        }else if(newAddress<1&&universe>1){
+          universe-=1;
+          finalAddress=512-footprint+1;
+        }
+        return {...item,universe,address:finalAddress};
+      }));
     };
     const up=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)};
     window.addEventListener('pointermove',move);
@@ -455,13 +494,41 @@ function Workbench(){
     move(e.nativeEvent);
   };
 
-  const sortFixtureTo=(targetId:string)=>{
-    if(!dragFixtureId||dragFixtureId===targetId)return;
-    const from=fixtures.findIndex(f=>f.id===dragFixtureId);
-    const to=fixtures.findIndex(f=>f.id===targetId);
-    if(from<0||to<0)return;
-    setFixtures(arrayMove(fixtures,from,to));
-    setDragFixtureId(undefined);
+ const sortFixtureTo=(targetId:string)=>{
+   if(!dragFixtureId||dragFixtureId===targetId)return;
+   const from=fixtures.findIndex(f=>f.id===dragFixtureId);
+   const to=fixtures.findIndex(f=>f.id===targetId);
+   if(from<0||to<0)return;
+   setFixtures(arrayMove(fixtures,from,to));
+   setDragFixtureId(undefined);
+ };
+  const openModeEditor=()=>{
+    if(!active)return;
+    setEditingModeId(active.modes[0]?.id||'');
+    setEditingModeName(active.modes[0]?.name||'');
+    setModeEditorOpen(true);
+  };
+  const addMode=()=>{
+    if(!active)return;
+    const newMode={id:uid(),name:'NewMode',channels:[]};
+    patch(f=>f.modes.push(newMode));
+    selectMode(newMode.id);
+    setEditingModeId(newMode.id);
+    setEditingModeName(newMode.name);
+  };
+  const removeMode=(id:string)=>{
+    if(!active||active.modes.length<=1)return;
+    const idx=active.modes.findIndex(m=>m.id===id);
+    patch(f=>{f.modes=f.modes.filter(m=>m.id!==id)});
+    if(modeId===id){
+      const remaining=active.modes.filter(m=>m.id!==id);
+      selectMode(remaining[Math.min(idx,remaining.length-1)]?.id||'');
+    }
+  };
+  const renameMode=()=>{
+    if(!active||!editingModeName.trim())return;
+    patch(f=>{const m=f.modes.find(x=>x.id===editingModeId);if(m)m.name=editingModeName.trim()});
+    setModeEditorOpen(false);
   };
 
   const openMvrImport=async(file:File)=>{
@@ -643,7 +710,7 @@ function Workbench(){
       <section className="meta">
         <label>灯具名称<Input value={active?.name} onChange={e=>patch(f=>{f.name=e.target.value;f.shortName=defaultPatchPrefix(f)})}/></label>
         <label>公司<Input value={active?.manufacturer.name} onChange={e=>patch(f=>{f.manufacturer.name=e.target.value})}/></label>
-        <label className="mode-field"><span>灯具模式</span><Select value={modeId} onChange={selectMode} options={active?.modes.map(m=>({value:m.id,label:`${m.name} · ${modeFootprint(m)} CH`}))}/></label>
+        <label className="mode-field"><span>灯具模式</span><div className="mode-field-row"><Select value={modeId} onChange={selectMode} options={active?.modes.map(m=>({value:m.id,label:`${m.name} · ${modeFootprint(m)} CH`}))}/><Button size="small" icon={<SettingOutlined/>} onClick={openModeEditor}/></div></label>
         <div><span>DMX 通道数</span><strong>{modeFootprint(mode)} CH</strong></div>
         <div><span>UE 兼容性</span><strong className="ok">UE 5.7+</strong></div>
       </section>
@@ -681,6 +748,14 @@ function Workbench(){
 
     <Modal width={760} title="MA 属性管理" open={managerOpen} onCancel={()=>setManagerOpen(false)} footer={<Button onClick={()=>setManagerOpen(false)}>关闭</Button>}>
       <div className="attribute-manager"><div className="manager-head"><span>标准属性只读；自定义属性可编辑或删除。</span><Button type="primary" icon={<PlusOutlined/>} onClick={()=>openAttributeEditor()}>添加自定义属性</Button></div>{catalog.groups.map(g=><section key={g.id}><h4>{g.id} <small>{g.nameZh}</small></h4>{catalog.attributes.filter(a=>a.maFeature===g.id).map(a=><div className="attribute-row" key={a.id}><code>{a.id}</code><span>{a.nameZh}</span><span>{a.ueAttribute}</span>{a.custom?<div><Button size="small" onClick={()=>openAttributeEditor(a)}>编辑</Button><Popconfirm title="删除此自定义属性？" onConfirm={()=>removeCustomAttribute(a.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm></div>:<Tag>MA 内置</Tag>}</div>)}</section>)}</div>
+   </Modal>
+    <Modal width={460} title="灯具模式管理" open={modeEditorOpen} onCancel={()=>setModeEditorOpen(false)} footer={<Button onClick={()=>setModeEditorOpen(false)}>关闭</Button>}>
+      <div className="mode-editor">{active?.modes.map(m=><div key={m.id} className={`mode-row ${m.id===editingModeId?'active':''}`} onClick={()=>{setEditingModeId(m.id);setEditingModeName(m.name)}}>
+        <Input value={editingModeId===m.id?editingModeName:m.name} onChange={e=>setEditingModeName(e.target.value)} onPressEnter={renameMode}/>
+        <Tag color="blue">{modeFootprint(m)} CH</Tag>
+        <Button size="small" type={editingModeId===m.id?'primary':'default'} onClick={renameMode}>重命名</Button>
+        <Popconfirm title={`删除模式「${m.name}」?`} description="此操作无法撤销" onConfirm={()=>removeMode(m.id)}><Button size="small" danger icon={<DeleteOutlined/>} disabled={active.modes.length<=1}/></Popconfirm>
+      </div>)}<Button type="dashed" block icon={<PlusOutlined/>} onClick={addMode} style={{marginTop:8}}>添加模式</Button></div>
     </Modal>
 
     <Modal title={editingId?'编辑自定义属性':'添加自定义属性'} open={editorOpen} onCancel={()=>setEditorOpen(false)} onOk={saveCustomAttribute} okText="保存属性" cancelText="取消">

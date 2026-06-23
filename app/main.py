@@ -1,4 +1,4 @@
-import io, json, uuid
+﻿import io, json, uuid
 from fastapi import FastAPI, HTTPException, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
 from .schemas import FixtureDocument, Preset, Manufacturer
@@ -109,7 +109,9 @@ def gdtf_export(fixture_id:str):
     f=load_fixture(fixture_id); return Response(export_gdtf(f),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{safe_name(f.name)}.gdtf"'})
 @app.get('/api/export/ue/{fixture_id}')
 def ue_export(fixture_id:str):
-    f=load_fixture(fixture_id); payload={'sceneName':f.name,'items':[{'fixtureId':f.id}]}; return Response(export_mvr_scene({f.id:f},payload['sceneName'],payload['items']),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{safe_name(f.name)}-UE5.7.mvr"'})
+    f=load_fixture(fixture_id); mode_name=f.modes[0].name if f.modes else 'Profile'
+    payload={'sceneName':f.name,'items':[{'fixtureId':f.id,'modeName':mode_name,'universe':1,'address':1}]}
+    return Response(export_mvr_scene({f.id:f},payload['sceneName'],payload['items']),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{safe_name(f.name)}-UE5.7.mvr"'})
 @app.post('/api/export/mvr')
 def mvr_export(payload:dict):
     items=payload.get('items') or []

@@ -170,7 +170,10 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         etree.SubElement(fixture,'FixtureID').text=str(item.get('fid') or index)
         etree.SubElement(fixture,'UnitNumber').text='0'
         addresses=etree.SubElement(fixture,'Addresses')
-        address=etree.SubElement(addresses,'Address',break_='0',universe=str(max(1,min(256,int(item.get('universe') or 1)))))
+        mode_name=item.get('modeName')
+        mode=next((m for m in fixture_doc.modes if m.name==mode_name),fixture_doc.modes[0]) if fixture_doc.modes else None
+        footprint=max((ch.address+ch.resolution//8-1 for ch in (mode.channels if mode else [])),default=1)
+        address=etree.SubElement(addresses,'Address',break_=str(footprint),universe=str(max(1,min(256,int(item.get('universe') or 1)))))
         address.text=str(max(1,min(512,int(item.get('address') or 1))))
     xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True).replace(b'break_=',b'break=')
     out=io.BytesIO()
