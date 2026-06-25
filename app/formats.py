@@ -167,7 +167,7 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         patch_name=item.get('name') or f'{fixture_doc.name}_{index:04d}'
         fixture=etree.SubElement(children,'Fixture',name=patch_name,uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS,f'{scene_name}:{item.get("id",index)}:{patch_name}')).upper())
         etree.SubElement(fixture,'Matrix').text='{-1.000000,0.000000,0.000000}{0.000000,1.000000,0.000000}{-0.000000,0.000000,-1.000000}{0.000000,0.000000,0.000000}'
-        etree.SubElement(fixture,'GDTFSpec').text=gdtf_base+'.gdtf'
+        etree.SubElement(fixture,'GDTFSpec').text=gdtf_base
         etree.SubElement(fixture,'GDTFMode').text=item.get('modeName') or (fixture_doc.modes[0].name if fixture_doc.modes else 'Default')
         etree.SubElement(fixture,'FixtureID').text=str(item.get('fid') or index)
         etree.SubElement(fixture,'UnitNumber').text='0'
@@ -177,11 +177,12 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         footprint=max((ch.address+ch.resolution//8-1 for ch in (mode.channels if mode else [])),default=1)
         universe=max(1,min(256,int(item.get('universe') or 1)))
         dmx_address=max(1,min(512,int(item.get('address') or 1)))
+        absolute_address=(universe-1)*512+dmx_address
         address=etree.SubElement(addresses,'Address',attrib={'break':'0'})
-        address.text=f'{universe}.{dmx_address}'
+        address.text=str(absolute_address)
     xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True)
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('MVR/GeneralSceneDescription.xml',xml)
-        for base,gdtf in gdtf_files.items(): archive.writestr('MVR/'+base+'.gdtf',gdtf)
+        archive.writestr('GeneralSceneDescription.xml',xml)
+        for base,gdtf in gdtf_files.items(): archive.writestr(base+'.gdtf',gdtf)
     return out.getvalue()

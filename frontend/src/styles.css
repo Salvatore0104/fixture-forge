@@ -765,3 +765,169 @@
 
 /* Mode editor */.mode-field-row{display:flex;gap:6px;align-items:center}.mode-field-row .ant-select{flex:1}.mode-editor{max-height:50vh;overflow:auto}.mode-row{display:grid;grid-template-columns:1fr 80px 82px 36px;gap:8px;align-items:center;padding:8px;border-bottom:1px solid #243138}.mode-row.active{background:#1f2b1f}.mode-row .ant-tag{margin:0}/* Patch row perf */.patch-row{contain:layout style;content-visibility:auto}
 /* Hide resizer */.mvr-resizer,.mvr-resizer:hover{display:none!important}
+
+/* Final MVR layout repair: the current JSX has two panels, so keep the
+   patch table and universe grid in two real columns. */
+.mvr-mode .mvr-overlay{grid-template-columns:minmax(0,1fr)!important}
+.mvr-mode .mvr-inspector{display:none!important}
+.mvr-mode .dmxlib-body{grid-template-columns:minmax(560px,44%) minmax(0,1fr)!important;gap:8px!important}
+.mvr-mode .patch-panel,.mvr-mode .universe-panel{display:block!important;min-width:0!important;min-height:0!important;height:100%!important}
+.mvr-mode .universe-head{display:flex!important;height:44px!important;min-height:44px!important;align-items:center!important;background:#0a1013!important;color:#d9e6ec!important}
+.mvr-mode .universe-grid{display:grid!important;position:relative!important;height:calc(100% - 44px)!important;grid-template-columns:repeat(32,minmax(24px,1fr))!important;grid-auto-rows:24px!important;gap:1px!important;overflow:auto!important;background:#151a1d!important;padding:0!important;align-content:start!important}
+.mvr-mode .universe-cell{display:flex!important;align-items:center!important;justify-content:center!important;min-width:24px!important;height:24px!important;background:#20272b!important;color:#c9dce5!important;border:1px solid rgba(255,255,255,.05)!important;font-size:10px!important;line-height:1!important;visibility:visible!important;opacity:1!important}
+.mvr-mode .universe-cell span{visibility:visible!important}
+.mvr-mode .universe-cell.occupied span{visibility:hidden!important}
+.mvr-mode .universe-bar{position:absolute!important;z-index:10!important;height:22px!important;margin:1px!important;border:2px solid #ffd400!important;opacity:.86!important;color:#061014!important;display:flex!important;align-items:center!important;overflow:hidden!important}
+.mvr-mode .universe-bar.selected{z-index:12!important;outline:2px solid #fff04a!important;outline-offset:-3px!important}
+/* Universe stack view: UE-like vertical universe sections with virtual scrolling. */
+.mvr-mode .universe-panel{display:flex!important;flex-direction:column!important;overflow:hidden!important}
+.mvr-mode .universe-scroll{position:relative!important;flex:1!important;min-height:0!important;overflow:auto!important;background:#151a1d!important}
+.mvr-mode .universe-virtual{position:relative!important;min-width:100%!important}
+.mvr-mode .universe-section{position:absolute!important;left:0!important;right:0!important;height:456px!important;padding:0 0 18px!important;contain:layout style paint!important}
+.mvr-mode .universe-panel>.universe-section{position:relative!important;flex:1!important;height:auto!important;padding:0!important}
+.mvr-mode .universe-section-title{height:28px!important;line-height:28px!important;padding:0 8px!important;border-top:1px solid #28343a!important;border-bottom:1px solid #28343a!important;background:#202020!important;color:#cfd7dc!important;font-size:12px!important;font-weight:700!important}
+.mvr-mode .universe-section.active .universe-section-title{color:#ffd21f!important;background:#26323a!important}
+.mvr-mode .universe-section .universe-grid{--dmx-cell-h:24px!important;display:grid!important;position:relative!important;height:384px!important;grid-template-columns:repeat(32,minmax(24px,1fr))!important;grid-auto-rows:var(--dmx-cell-h)!important;gap:1px!important;overflow:hidden!important;padding:0!important;background:#151a1d!important;align-content:start!important}
+.mvr-mode .universe-panel>.universe-section .universe-grid{height:calc(100% - 0px)!important;min-height:384px!important;overflow:auto!important}
+.mvr-mode .universe-section .universe-cell{display:flex!important;align-items:center!important;justify-content:center!important;height:var(--dmx-cell-h)!important;min-width:0!important;background:#20272b!important;color:#c9dce5!important;border:1px solid rgba(255,255,255,.05)!important;font-size:10px!important;line-height:1!important;visibility:visible!important;opacity:1!important}
+.mvr-mode .universe-section .universe-cell span{visibility:visible!important}
+.mvr-mode .universe-section .universe-cell.occupied span{visibility:hidden!important}
+.mvr-mode .universe-section .universe-bar{position:absolute!important;z-index:10!important;height:22px!important;margin:1px!important;border:2px solid #ffd400!important;opacity:.86!important;color:#061014!important;display:flex!important;align-items:center!important;overflow:hidden!important}
+.mvr-mode .universe-section .universe-bar.selected{z-index:12!important;outline:2px solid #fff04a!important;outline-offset:-3px!important}
+/* Universe section height correction: keep all 512 cells visible before the next section. */
+.mvr-mode .universe-section{height:500px!important;padding-bottom:40px!important}
+.mvr-mode .universe-section .universe-grid{height:408px!important}
+.mvr-mode .universe-panel>.universe-section{height:auto!important;padding-bottom:0!important}
+/* Final interaction polish requested after UE comparison. */
+.mvr-mode .universe-section{height:528px!important;padding-bottom:48px!important}
+.mvr-mode .universe-section .universe-grid{height:416px!important;overflow:visible!important}
+.mvr-mode .universe-scroll{overflow:auto!important;padding-bottom:28px!important}
+.mvr-mode .universe-panel>.universe-section{height:auto!important;padding-bottom:0!important;overflow:auto!important}
+.mvr-mode .universe-panel>.universe-section .universe-grid{height:416px!important;min-height:416px!important;overflow:visible!important}
+.mvr-mode .universe-bar{opacity:1!important;background-image:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.04))!important;color:#061014!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 0 0 1px rgba(0,0,0,.55)!important}
+.mvr-mode .universe-bar.selected{opacity:1!important;outline:2px solid #fff04a!important;outline-offset:-3px!important}
+.mvr-mode .universe-bar b{text-shadow:0 1px 1px rgba(255,255,255,.35)!important}
+/* Lazy UE-style universe viewport: render only a few vertical sections, with
+   exact 32-column geometry and no horizontal scroll. */
+.mvr-mode .mvr-main,
+.mvr-mode .dmxlib-body,
+.mvr-mode .universe-panel{
+  min-width:0!important;
+  overflow:hidden!important;
+}
+.mvr-mode .universe-head{
+  flex:0 0 44px!important;
+  height:44px!important;
+  min-height:44px!important;
+}
+.mvr-mode .universe-scroll{
+  position:relative!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  width:100%!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  padding:0 0 32px!important;
+  background:#151a1d!important;
+}
+.mvr-mode .universe-virtual{
+  position:relative!important;
+  width:100%!important;
+  min-width:0!important;
+  overflow:hidden!important;
+}
+.mvr-mode .universe-section{
+  position:absolute!important;
+  left:0!important;
+  right:0!important;
+  width:100%!important;
+  height:528px!important;
+  padding:0 0 40px!important;
+  box-sizing:border-box!important;
+  contain:layout style paint!important;
+  overflow:hidden!important;
+}
+.mvr-mode .universe-section-title{
+  height:28px!important;
+  line-height:28px!important;
+}
+.mvr-mode .universe-section .universe-grid{
+  --dmx-cell-h:24px!important;
+  display:grid!important;
+  position:relative!important;
+  width:100%!important;
+  min-width:0!important;
+  height:384px!important;
+  grid-template-columns:repeat(32,minmax(0,1fr))!important;
+  grid-auto-rows:var(--dmx-cell-h)!important;
+  gap:0!important;
+  overflow:hidden!important;
+  padding:0!important;
+  box-sizing:border-box!important;
+  align-content:start!important;
+}
+.mvr-mode .universe-section .universe-cell{
+  width:auto!important;
+  min-width:0!important;
+  height:var(--dmx-cell-h)!important;
+  border:0!important;
+  outline:1px solid rgba(255,255,255,.055)!important;
+  outline-offset:-1px!important;
+}
+.mvr-mode .universe-section .universe-bar{
+  height:22px!important;
+  margin:1px!important;
+  box-sizing:border-box!important;
+  opacity:1!important;
+}
+.mvr-mode .universe-scroll::-webkit-scrollbar:horizontal,
+.mvr-mode .universe-grid::-webkit-scrollbar:horizontal{
+  height:0!important;
+}
+
+/* UE-like translucent patch bars: keep channel numbers readable above bars. */
+.mvr-mode .universe-section{
+  height:452px!important;
+  padding:0 0 14px!important;
+}
+.mvr-mode .universe-section .universe-grid{
+  height:384px!important;
+  overflow:hidden!important;
+}
+.mvr-mode .universe-section .universe-cell{
+  position:relative!important;
+  z-index:20!important;
+  background:rgba(32,39,43,.18)!important;
+  pointer-events:auto!important;
+}
+.mvr-mode .universe-section .universe-cell span,
+.mvr-mode .universe-section .universe-cell.occupied span{
+  visibility:visible!important;
+  position:relative!important;
+  z-index:22!important;
+  color:#cdefff!important;
+  text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.8)!important;
+}
+.mvr-mode .universe-section .universe-bar{
+  z-index:8!important;
+  height:21px!important;
+  margin:1px!important;
+  opacity:1!important;
+  background-image:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.02))!important;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 0 0 1px rgba(0,0,0,.35)!important;
+}
+.mvr-mode .universe-section .universe-bar b{
+  color:#051014!important;
+  opacity:.9!important;
+  text-shadow:0 1px 1px rgba(255,255,255,.28)!important;
+}
+.mvr-mode .universe-section .universe-bar.selected{
+  z-index:9!important;
+  outline:2px solid #fff04a!important;
+  outline-offset:-3px!important;
+}
+
+/* Channel labels are visual only, so patch bars remain clickable/draggable. */
+.mvr-mode .universe-section .universe-cell{
+  pointer-events:none!important;
+}

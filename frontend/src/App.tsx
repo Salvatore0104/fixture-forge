@@ -10,6 +10,14 @@ import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,MvrImportOption,Res
 
 const uid=()=>crypto.randomUUID();
 const patchColors=['#18d5e8','#75e900','#2820bb','#ffb000','#d44aff','#ff4d4f','#00b578','#4096ff'];
+const UNIVERSE_COUNT=256;
+const UNIVERSE_SECTION_HEIGHT=452;
+const rgba=(hex:string,alpha:number)=>{
+  const value=hex.replace('#','');
+  if(value.length!==6)return hex;
+  const n=parseInt(value,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
+};
 
 interface MvrItem{
   id:string;
@@ -92,6 +100,8 @@ function Workbench(){
   const [editingModeId,setEditingModeId]=useState<string>();
   const [editingModeName,setEditingModeName]=useState('');
   const [universeView,setUniverseView]=useState(1);
+  const [showAllUniverses]=useState(true);
+  const [universeScrollTop,setUniverseScrollTop]=useState(0);
   const [mvrDraftReady,setMvrDraftReady]=useState(false);
  const [dragFixtureId,setDragFixtureId]=useState<string>();
  const [addPatchOpen,setAddPatchOpen]=useState(false);
@@ -114,6 +124,8 @@ function Workbench(){
   const fileRef=useRef<HTMLInputElement>(null);
   const mvrFileRef=useRef<HTMLInputElement>(null);
   const universeGridRef=useRef<HTMLDivElement>(null);
+  const universeScrollRef=useRef<HTMLDivElement>(null);
+  const scrollDrivenUniverseRef=useRef(false);
 
   const mode=active?.modes.find(m=>m.id===modeId)||active?.modes[0];
   const channel=mode?.channels.find(c=>c.id===channelId);
@@ -125,6 +137,12 @@ function Workbench(){
     setSelectedPatchIds(unique);
     setSelectedPatch(unique[unique.length-1]);
     if(unique.length!==1)setEditingPatchId(undefined);
+  };
+  const clearPatchSelection=()=>{
+    setSelectedPatchIds([]);
+    setSelectedPatch(undefined);
+    setPatchSelectionAnchor(undefined);
+    setEditingPatchId(undefined);
   };
 
   useEffect(()=>{
@@ -211,11 +229,21 @@ function Workbench(){
   },[active?.revision,dirty,fixtures.length]);
 
   useEffect(()=>{
+    if(!showAllUniverses)return;
+    if(scrollDrivenUniverseRef.current){
+      scrollDrivenUniverseRef.current=false;
+      return;
+    }
+    universeScrollRef.current?.scrollTo({top:(universeView-1)*UNIVERSE_SECTION_HEIGHT,behavior:'smooth'});
+  },[showAllUniverses,universeView]);
+
+  useEffect(()=>{
     if(!selectedMvrItem||selectedMvrItem.universe!==universeView)return;
     requestAnimationFrame(()=>{
-      universeGridRef.current?.querySelector(`[data-channel="${selectedMvrItem.address}"]`)?.scrollIntoView({block:'nearest',inline:'center'});
+      const root=showAllUniverses?universeScrollRef.current:universeGridRef.current;
+      root?.querySelector(`[data-universe="${selectedMvrItem.universe}"] [data-channel="${selectedMvrItem.address}"], [data-channel="${selectedMvrItem.address}"]`)?.scrollIntoView({block:'nearest',inline:'center'});
     });
-  },[selectedMvrItem?.id,selectedMvrItem?.address,selectedMvrItem?.universe,universeView]);
+  },[selectedMvrItem?.id,selectedMvrItem?.address,selectedMvrItem?.universe,universeView,showAllUniverses]);
 
   const patch=(fn:(fixture:FixtureDocument)=>void)=>{
     if(!active)return;
@@ -401,6 +429,19 @@ function Workbench(){
   };
 
   const patchMvrItem=(id:string,p:Partial<MvrItem>)=>setMvrItems(items=>items.map(x=>x.id===id?{...x,...p}:x));
+  const sortedPatchIds=(ids:string[],items=mvrItems)=>{
+    const wanted=new Set(ids);
+    return items.filter(item=>wanted.has(item.id)).sort((a,b)=>(a.universe-b.universe)||(a.address-b.address)||(a.fid-b.fid)).map(item=>item.id);
+  };
+  const nextPatchPosition=(universe:number,address:number,footprint:number)=>{
+    let nextUniverse=universe;
+    let nextAddress=address+Math.max(1,footprint);
+    while(nextAddress>512&&nextUniverse<UNIVERSE_COUNT){
+      nextUniverse+=1;
+      nextAddress-=512;
+    }
+    return {universe:nextUniverse,address:Math.max(1,Math.min(512,nextAddress))};
+  };
 
   const deleteMvrItems=(ids:string[])=>{
     const doomed=new Set(ids);
@@ -433,70 +474,52 @@ function Workbench(){
     if(item)setUniverseView(item.universe);
   };
 
-  const addressFromPointer=(x:number,y:number)=>{
-    const grid=universeGridRef.current;
+  const patchPositionFromPointer=(x:number,y:number)=>{
+    const target=document.elementFromPoint(x,y) as HTMLElement|null;
+    const section=target?.closest<HTMLElement>('[data-universe]');
+    const grid=(section?.querySelector('.universe-grid') as HTMLDivElement|null)||universeGridRef.current;
     if(!grid)return;
     const rect=grid.getBoundingClientRect();
     if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return;
-    const col=Math.max(0,Math.min(31,Math.floor((x-rect.left+grid.scrollLeft)/(grid.scrollWidth/32))));
-    const row=Math.max(0,Math.min(15,Math.floor((y-rect.top+grid.scrollTop)/25)));
-    return row*32+col+1;
+    const col=Math.max(0,Math.min(31,Math.floor((x-rect.left)/(grid.clientWidth/32))));
+    const row=Math.max(0,Math.min(15,Math.floor((y-rect.top)/24)));
+    return {universe:Math.max(1,Math.min(UNIVERSE_COUNT,Number(section?.dataset.universe)||universeView)),address:row*32+col+1};
   };
 
   const movePatchGroup=(ids:string[],targetUniverse:number,targetAddress:number)=>{
-    const draggedItem=mvrItems.find(x=>x.id===ids[ids.length-1]);
-    if(!draggedItem)return;
-    const delta=targetAddress-draggedItem.address;
-    const idSet=new Set(ids);
-    setMvrItems(items=>items.map(item=>{
-      if(!idSet.has(item.id))return item;
-      const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
-      const sameUniverse=item.universe===draggedItem.universe;
-      let universe=sameUniverse?targetUniverse:item.universe;
-      let address=Math.max(1,Math.min(512,item.address+delta));
-      if(address+footprint-1>512&&universe<256){
-        universe+=1;
-        address=1;
-      }
-      return {...item,universe,address};
-    }));
-    setSelectedPatch(ids[ids.length-1]);
+    const orderedIds=sortedPatchIds(ids);
+    if(!orderedIds.length)return;
+    setMvrItems(items=>{
+      const byId=new Map(items.map(item=>[item.id,item]));
+      let cursor={universe:Math.max(1,Math.min(UNIVERSE_COUNT,targetUniverse)),address:Math.max(1,Math.min(512,targetAddress))};
+      const updates=new Map<string,Pick<MvrItem,'universe'|'address'>>();
+      orderedIds.forEach(id=>{
+        const item=byId.get(id);
+        if(!item)return;
+        const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
+        if(cursor.address+footprint-1>512&&cursor.universe<UNIVERSE_COUNT)cursor={universe:cursor.universe+1,address:1};
+        updates.set(id,{universe:cursor.universe,address:cursor.address});
+        cursor=nextPatchPosition(cursor.universe,cursor.address,footprint);
+      });
+      return items.map(item=>updates.has(item.id)?{...item,...updates.get(item.id)!}:item);
+    });
+    setPatchSelection(orderedIds);
+    setPatchSelectionAnchor(orderedIds[0]);
+    setSelectedPatch(orderedIds[0]);
+    setUniverseView(targetUniverse);
   };
 
   const startPatchDrag=(id:string,e:React.PointerEvent<HTMLDivElement>)=>{
     e.preventDefault();
     e.stopPropagation();
-    const draggedIds=selectedPatchIds.includes(id)?selectedPatchIds:[id];
+    const draggedIds=sortedPatchIds(selectedPatchIds.includes(id)?selectedPatchIds:[id]);
     setPatchSelection(draggedIds);
-    setPatchSelectionAnchor(id);
-    setSelectedPatch(id);
-    const draggedItem=mvrItems.find(x=>x.id===id);
-    if(!draggedItem)return;
-    const startAddress=draggedItem.address;
-    const origins=draggedIds.map(did=>{
-      const item=mvrItems.find(x=>x.id===did);
-      return item?{id:did,address:item.address,universe:item.universe}:null;
-    }).filter(Boolean) as {id:string;address:number;universe:number}[];
+    setPatchSelectionAnchor(draggedIds[0]);
+    setSelectedPatch(draggedIds[0]);
     const move=(ev:PointerEvent)=>{
-      const addr=addressFromPointer(ev.clientX,ev.clientY);
-      if(!addr)return;
-      const delta=addr-startAddress;
-      setMvrItems(items=>items.map(item=>{
-        const origin=origins.find(o=>o.id===item.id);
-        if(!origin)return item;
-        const newAddress=Math.max(1,Math.min(512,origin.address+delta));
-        const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
-        let universe=origin.universe;
-        let finalAddress=newAddress;
-        if(newAddress+footprint-1>512&&universe<256){
-          universe+=1;
-          finalAddress=1;
-        }else if(newAddress<1&&universe>1){
-          universe-=1;
-          finalAddress=512-footprint+1;
-        }
-        return {...item,universe,address:finalAddress};
-      }));
+      const pos=patchPositionFromPointer(ev.clientX,ev.clientY);
+      if(!pos)return;
+      movePatchGroup(draggedIds,pos.universe,pos.address);
     };
     const up=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)};
     window.addEventListener('pointermove',move);
@@ -586,28 +609,54 @@ function Workbench(){
     message.success('已清除 MVR 配接草稿');
   };
 
-  const universeBars=useMemo(()=>mvrItems.filter(item=>item.universe===universeView).flatMap(item=>{
-    const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
-    const end=Math.min(512,item.address+footprint-1);
-    const segments:{item:MvrItem;row:number;col:number;span:number;start:number;end:number}[]=[];
-    for(let ch=item.address;ch<=end;){
-      const row=Math.floor((ch-1)/32)+1;
-      const col=((ch-1)%32)+1;
-      const rowEnd=Math.min(end,row*32);
-      segments.push({item,row,col,span:rowEnd-ch+1,start:ch,end:rowEnd});
-      ch=rowEnd+1;
-    }
-    return segments;
-  }),[mvrItems,fixtureById,universeView]);
-  const occupiedUniverseChannels=useMemo(()=>{
-    const used=new Set<number>();
-    mvrItems.filter(item=>item.universe===universeView).forEach(item=>{
+  const universeLayout=useMemo(()=>{
+    const bars=new Map<number,{item:MvrItem;row:number;col:number;span:number;start:number;end:number}[]>();
+    const occupied=new Map<number,Set<number>>();
+    mvrItems.forEach(item=>{
+      const universe=Math.max(1,Math.min(UNIVERSE_COUNT,item.universe||1));
       const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
       const end=Math.min(512,item.address+footprint-1);
+      const used=occupied.get(universe)||new Set<number>();
+      occupied.set(universe,used);
       for(let ch=item.address;ch<=end;ch++)used.add(ch);
+      const segments=bars.get(universe)||[];
+      bars.set(universe,segments);
+      for(let ch=item.address;ch<=end;){
+        const row=Math.floor((ch-1)/32)+1;
+        const col=((ch-1)%32)+1;
+        const rowEnd=Math.min(end,row*32);
+        segments.push({item,row,col,span:rowEnd-ch+1,start:ch,end:rowEnd});
+        ch=rowEnd+1;
+      }
     });
-    return used;
-  },[mvrItems,fixtureById,universeView]);
+    return {bars,occupied};
+  },[mvrItems,fixtureById]);
+  const visibleUniverses=useMemo(()=>{
+    if(!showAllUniverses)return [universeView];
+    const start=Math.max(1,Math.min(UNIVERSE_COUNT,Math.floor(universeScrollTop/UNIVERSE_SECTION_HEIGHT)+1));
+    const end=Math.min(UNIVERSE_COUNT,start+2);
+    return Array.from({length:end-start+1},(_,i)=>start+i);
+  },[showAllUniverses,universeView,universeScrollTop]);
+
+  const handleUniverseScroll=(top:number)=>{
+    setUniverseScrollTop(top);
+    const current=Math.max(1,Math.min(UNIVERSE_COUNT,Math.floor(top/UNIVERSE_SECTION_HEIGHT)+1));
+    setUniverseView(prev=>{
+      if(prev===current)return prev;
+      scrollDrivenUniverseRef.current=true;
+      return current;
+    });
+  };
+
+  const renderUniverseSection=(universe:number,offsetTop?:number)=>(
+    <section key={universe} data-universe={universe} className={`universe-section ${universe===universeView?'active':''}`} style={offsetTop!==undefined?{transform:`translateY(${offsetTop}px)`}:undefined}>
+      {showAllUniverses&&<div className="universe-section-title">Universe {universe}</div>}
+      <div ref={universe===universeView?universeGridRef:undefined} className="universe-grid" onClick={e=>{if((e.target as HTMLElement).closest('.universe-bar'))return;clearPatchSelection();}}>
+        {Array.from({length:512},(_,i)=>i+1).map(ch=><div key={ch} data-channel={ch} className={`universe-cell ${universeLayout.occupied.get(universe)?.has(ch)?'occupied':''}`} title={`Universe ${universe} · CH ${ch}`} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/patch-id');if(id){const ids=selectedPatchIds.includes(id)?selectedPatchIds:[id];movePatchGroup(ids,universe,ch)}}}><span>{ch}</span></div>)}
+        {(universeLayout.bars.get(universe)||[]).map(seg=><div key={`${seg.item.id}-${seg.start}`} className={`universe-bar ${selectedPatchIds.includes(seg.item.id)?'selected':''}`} style={{left:`calc(${seg.col-1} * 100% / 32)`,top:`calc(${seg.row-1} * var(--dmx-cell-h))`,width:`calc(${seg.span} * 100% / 32)`,backgroundColor:rgba(seg.item.color,selectedPatchIds.includes(seg.item.id)?0.34:0.22),borderColor:seg.item.color}} title={`${seg.item.name} · U${universe} ${seg.start}-${seg.end}`} onClick={e=>{e.stopPropagation();selectPatchRow(seg.item.id,e)}} onPointerDown={e=>startPatchDrag(seg.item.id,e)}><b>{seg.start===seg.item.address?seg.item.name:''}</b></div>)}
+      </div>
+    </section>
+  );
 
   if(!catalog)return <div className="loading">正在加载灯具工作台…</div>;
 
@@ -690,11 +739,12 @@ function Workbench(){
             </div>
           </div>
          <div className="universe-panel">
-            <div className="universe-head"><span>本地 Universe</span><Button size="small" disabled={universeView<=1} onClick={()=>setUniverseView(Math.max(1,universeView-1))}>上一域</Button><InputNumber min={1} max={256} value={universeView} onChange={v=>setUniverseView(Math.max(1,Math.min(256,v||1)))}/><span>/ 256</span><Button size="small" disabled={universeView>=256} onClick={()=>setUniverseView(Math.min(256,universeView+1))}>下一域</Button><Checkbox>只显示冲突</Checkbox><Checkbox>显示所有带配接的域</Checkbox></div>
-            <div ref={universeGridRef} className="universe-grid">
-              {Array.from({length:512},(_,i)=>i+1).map(ch=><div key={ch} data-channel={ch} className={`universe-cell ${occupiedUniverseChannels.has(ch)?'occupied':''}`} title={`CH ${ch}`} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/patch-id');if(id){const ids=selectedPatchIds.includes(id)?selectedPatchIds:[id];movePatchGroup(ids,universeView,ch)}}}><span>{ch}</span></div>)}
-              {universeBars.map(seg=><div key={`${seg.item.id}-${seg.start}`} className={`universe-bar ${selectedPatchIds.includes(seg.item.id)?'selected':''}`} style={{left:`calc(${seg.col-1} * 100% / 32)`,top:`calc(${seg.row-1} * var(--dmx-cell-h))`,width:`calc(${seg.span} * 100% / 32)`,backgroundColor:seg.item.color}} title={`${seg.item.name} · ${seg.start}-${seg.end}`} onClick={e=>{e.stopPropagation();selectPatchRow(seg.item.id,e)}} onPointerDown={e=>startPatchDrag(seg.item.id,e)}><b>{seg.start===seg.item.address?seg.item.name:''}</b></div>)}
-            </div>
+            <div className="universe-head"><span>本地 Universe</span><Button size="small" disabled={universeView<=1} onClick={()=>setUniverseView(Math.max(1,universeView-1))}>上一域</Button><InputNumber min={1} max={UNIVERSE_COUNT} value={universeView} onChange={v=>setUniverseView(Math.max(1,Math.min(UNIVERSE_COUNT,v||1)))}/><span>/ {UNIVERSE_COUNT}</span><Button size="small" disabled={universeView>=UNIVERSE_COUNT} onClick={()=>setUniverseView(Math.min(UNIVERSE_COUNT,universeView+1))}>下一域</Button></div>
+            {showAllUniverses?<div ref={universeScrollRef} className="universe-scroll" onScroll={e=>handleUniverseScroll(e.currentTarget.scrollTop)}>
+              <div className="universe-virtual" style={{height:UNIVERSE_COUNT*UNIVERSE_SECTION_HEIGHT}}>
+                {visibleUniverses.map(universe=>renderUniverseSection(universe,(universe-1)*UNIVERSE_SECTION_HEIGHT))}
+              </div>
+            </div>:renderUniverseSection(universeView)}
           </div>
         </div>
       </section>
