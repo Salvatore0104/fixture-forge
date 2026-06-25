@@ -4,13 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from .schemas import FixtureDocument, Preset, Manufacturer
 from .db import list_records, get_record, save_record, delete_record
 from .catalog import GROUPS, ATTRIBUTES
-from .formats import import_ma2, import_gdtf, import_mvr_fixture_options, export_ma2, export_gdtf, export_ue_bundle, export_mvr_scene, export_ma2_patch_package, validate_fixture, safe_name
+from .formats import import_ma2, import_gdtf, import_mvr_fixture_options, export_ma2, export_gdtf, export_ue_bundle, export_mvr_scene, export_ma2_patch_package, push_ma2_to_onpc, validate_fixture, safe_name
+from .network import scan_ma2_instances
 
 app=FastAPI(title='Fixture Forge API',version='1.0.0')
 app.add_middleware(CORSMiddleware,allow_origins=['*'],allow_methods=['*'],allow_headers=['*'])
 
 @app.get('/api/health')
 def health(): return {'status':'ok','service':'fixture-forge'}
+@app.get('/api/network/scan-ma2')
+def network_scan_ma2():
+    return scan_ma2_instances()
 @app.get('/api/attributes')
 def attributes():
     custom = list_records('custom_attribute')
@@ -135,6 +139,29 @@ def ma2_patch_export(payload:dict):
         documents[fixture_id]=FixtureDocument.model_validate(value)
     scene_name=str(payload.get('sceneName') or 'FixtureForge_MA2_Patch')
     return Response(export_ma2_patch_package(documents,scene_name,items),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{safe_name(scene_name)}-MA2Patch.zip"'})
+
+@app.post('/api/export/ma2-push')
+def ma2_push_export(payload:dict):
+    options=payload.get('options') or {}
+    items=payload.get('items') or []
+    if not items and not options.get('testOnly'): raise HTTPException(400,'MA2 一键导入至少需要一个灯具实例')
+    fixture_ids={str(item.get('fixtureId')) for item in items}; documents={}
+    for fixture_id in fixture_ids:
+        value=get_record(fixture_id,'fixture')
+        if not value: raise HTTPException(404,f'灯具不存在：{fixture_id}')
+        documents[fixture_id]=FixtureDocument.model_validate(value)
+    scene_name=str(payload.get('sceneName') or 'FixtureForge_MA2_Push')
+    result=push_ma2_to_onpc(
+        documents,
+        items,
+        scene_name,
+        ma2_ip=str(payload.get('ma2Ip') or '127.0.0.1'),
+        ma2_port=int(payload.get('ma2Port') or 30000),
+        username=str(payload.get('username') or ''),
+        password=str(payload.get('password') or ''),
+        options=options,
+    )
+    return result
 
 @app.get('/api/presets')
 def presets(): return list_records('preset')

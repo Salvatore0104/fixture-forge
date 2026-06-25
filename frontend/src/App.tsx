@@ -1,12 +1,12 @@
 ﻿import {useEffect,useMemo,useRef,useState} from 'react';
 import {App as AntApp,Button,Checkbox,Divider,Empty,Input,InputNumber,Modal,Popconfirm,Select,Switch,Tag,Tooltip} from 'antd';
-import {ApartmentOutlined,CheckCircleOutlined,CopyOutlined,DeleteOutlined,DownloadOutlined,HolderOutlined,PlusOutlined,SaveOutlined,SearchOutlined,SettingOutlined,UploadOutlined,WarningOutlined} from '@ant-design/icons';
+import {ApartmentOutlined,CheckCircleOutlined,CloseCircleOutlined,CopyOutlined,DeleteOutlined,DownloadOutlined,HolderOutlined,PlusOutlined,ReloadOutlined,SaveOutlined,SearchOutlined,SettingOutlined,ThunderboltOutlined,UploadOutlined,WarningOutlined} from '@ant-design/icons';
 import {arrayMove} from '@dnd-kit/sortable';
 import {api,download,downloadMa2Patch,downloadMvr} from './api';
 import {draft} from './draft';
 import {useStore} from './store';
 import {compactModeAddresses,modeFootprint,removeChannelAndCompact} from './model';
-import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,MvrImportOption,Resolution} from './types';
+import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,Ma2Device,MvrImportOption,MvrItem,PushResult,Resolution} from './types';
 
 const uid=()=>crypto.randomUUID();
 const patchColors=['#18d5e8','#75e900','#2820bb','#ffb000','#d44aff','#ff4d4f','#00b578','#4096ff'];
@@ -18,17 +18,6 @@ const rgba=(hex:string,alpha:number)=>{
   const n=parseInt(value,16);
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
 };
-
-interface MvrItem{
-  id:string;
-  fixtureId:string;
-  fid:number;
-  modeName:string;
-  universe:number;
-  address:number;
-  color:string;
-  name:string;
-}
 
 const emptyFixture=():FixtureDocument=>({
   id:uid(),
@@ -110,6 +99,18 @@ function Workbench(){
   const [mvrImportOptions,setMvrImportOptions]=useState<MvrImportOption[]>([]);
   const [mvrImportSelected,setMvrImportSelected]=useState<number[]>([]);
  const [mvrImportOpen,setMvrImportOpen]=useState(false);
+  const [ma2Open,setMa2Open]=useState(false);
+  const [ma2Devices,setMa2Devices]=useState<Ma2Device[]>([]);
+  const [ma2Selected,setMa2Selected]=useState('127.0.0.1');
+  const [ma2Port,setMa2Port]=useState(30000);
+  const [ma2Username,setMa2Username]=useState('administrator');
+  const [ma2Password,setMa2Password]=useState('admin');
+  const [ma2Options,setMa2Options]=useState({importFixtureTypes:true,patchFixtures:true,labelFixtures:true});
+  const [ma2Scanning,setMa2Scanning]=useState(false);
+  const [ma2Testing,setMa2Testing]=useState(false);
+  const [ma2Importing,setMa2Importing]=useState(false);
+  const [ma2Result,setMa2Result]=useState<PushResult>();
+  const [ma2LogOpen,setMa2LogOpen]=useState(false);
   useEffect(()=>{
     if(!editingPatchId)return;
     const handler=(e:PointerEvent)=>{
@@ -699,6 +700,47 @@ function Workbench(){
       message.error((e as Error).message);
     }
   };
+  const scanMa2=async()=>{
+    setMa2Scanning(true);
+    try{
+      const devices=await api.scanMa2Network();
+      setMa2Devices(devices);
+      const recommended=devices.find(x=>x.isLocal)||devices[0];
+      if(recommended){
+        setMa2Selected(recommended.ip);
+        setMa2Port(recommended.remotePort||30000);
+      }
+      message.success(devices.length?`发现 ${devices.length} 个候选 MA2 设备`:'未发现 MA2 设备，可手动输入 IP');
+    }catch(e){
+      message.error((e as Error).message);
+    }finally{
+      setMa2Scanning(false);
+    }
+  };
+  const openMa2Push=()=>{
+    setMa2Result(undefined);
+    setMa2LogOpen(false);
+    setMa2Open(true);
+    if(!ma2Devices.length)void scanMa2();
+  };
+  const pushMa2=async(testOnly=false)=>{
+    if(testOnly)setMa2Testing(true);else setMa2Importing(true);
+    setMa2Result(undefined);
+    setMa2LogOpen(false);
+    try{
+      const result=await api.pushToMa2({sceneName,items:testOnly?[]:mvrItems,ma2Ip:ma2Selected,ma2Port,username:ma2Username,password:ma2Password,options:{...ma2Options,testOnly}});
+      setMa2Result(result);
+      if(testOnly&&result.success)message.success('TCP 30000 已连通，MA2 登录成功');
+      else if(testOnly)message.error(result.errors?.[0]||'MA2 登录失败');
+      else if(result.success)message.success(`MA2 导入命令已发送：${result.sent} 条`);
+      else message.error(result.errors?.[0]||'MA2 导入失败');
+    }catch(e){
+      message.error((e as Error).message);
+      setMa2Result({success:false,sent:0,errors:[(e as Error).message],commands:[]});
+    }finally{
+      if(testOnly)setMa2Testing(false);else setMa2Importing(false);
+    }
+  };
   const clearMvrDraft=()=>{
     setMvrItems([]);
     setSelectedPatch(undefined);
@@ -780,6 +822,7 @@ function Workbench(){
           </Popconfirm>
           <Button type="primary" icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMvr}>生成 MVR</Button>
           <Button icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMa2Patch}>生成 MA2配接包</Button>
+          <Button icon={<ThunderboltOutlined/>} disabled={!mvrItems.length} onClick={openMa2Push}>一键导入MA2</Button>
         </>}
       </div>
     </header>
@@ -928,6 +971,57 @@ function Workbench(){
 
     <Modal width={780} title="导入 MVR 灯具库" open={mvrImportOpen} onCancel={()=>setMvrImportOpen(false)} onOk={confirmMvrImport} okText="导入选中灯具" cancelText="取消" okButtonProps={{disabled:!mvrImportSelected.length}}>
       <div className="mvr-import"><div className="manager-head"><span>只导入 MVR 内嵌 GDTF 的 Fixture Type；不导入 Fixture Patch、Universe、地址或数量。</span><Checkbox checked={mvrImportSelected.length===mvrImportOptions.length&&mvrImportOptions.length>0} indeterminate={mvrImportSelected.length>0&&mvrImportSelected.length<mvrImportOptions.length} onChange={e=>setMvrImportSelected(e.target.checked?mvrImportOptions.map(x=>x.index):[])}>全选</Checkbox></div>{mvrImportOptions.map(option=><label className="mvr-import-row" key={option.key}><Checkbox checked={mvrImportSelected.includes(option.index)} onChange={e=>setMvrImportSelected(e.target.checked?[...mvrImportSelected,option.index]:mvrImportSelected.filter(x=>x!==option.index))}/><div><strong>{option.name}</strong><span>{option.manufacturer}</span></div><Tag color="blue">{option.footprint} CH</Tag><Tag>{option.modes.length} 个模式</Tag><code>{option.key}</code></label>)}{!mvrImportOptions.length&&<Empty description="未找到可导入的灯具类型"/>}</div>
+    </Modal>
+
+    <Modal width={980} className="ma2-push-modal" title="一键导入 → MA2" open={ma2Open} onCancel={()=>setMa2Open(false)} footer={<div className="ma2-modal-actions"><Button onClick={()=>pushMa2(true)} loading={ma2Testing}>测试连接/登录</Button><Button type="primary" icon={<ThunderboltOutlined/>} disabled={!mvrItems.length} loading={ma2Importing} onClick={()=>pushMa2(false)}>开始一键导入</Button></div>}>
+      <div className="ma2-push-layout">
+        <div className="ma2-config-panel">
+          <section>
+            <div className="manager-head"><b>目标 MA2 设备</b><Button icon={<ReloadOutlined/>} loading={ma2Scanning} onClick={scanMa2}>扫描局域网</Button></div>
+            {ma2Scanning&&<div className="ma2-scan-progress">正在扫描本机网段的 TCP 30000 / HTTP 80...</div>}
+            <div className="ma2-device-list">
+              {ma2Devices.map(device=><button key={device.ip} type="button" className={`ma2-device-item ${ma2Selected===device.ip?'selected':''}`} onClick={()=>{setMa2Selected(device.ip);setMa2Port(device.remotePort||30000)}}>
+                <span><strong>{device.ip}:{device.remotePort}</strong>{device.isLocal&&<Tag color="green">本机 onPC</Tag>}</span>
+                <small>{device.hostname||'未解析主机名'} · {device.detectedBy.join(', ')}</small>
+              </button>)}
+              {!ma2Devices.length&&!ma2Scanning&&<Empty description="尚未发现设备，可手动输入 IP"/>}
+            </div>
+            <div className="ma2-manual-target">
+              <label>手动 IP<Input value={ma2Selected} onChange={e=>setMa2Selected(e.target.value.trim())}/></label>
+              <label>端口<InputNumber min={1} max={65535} value={ma2Port} onChange={v=>setMa2Port(v||30000)}/></label>
+            </div>
+          </section>
+          <section>
+            <div className="ma2-settings-grid">
+              <label>MA2 用户名<Input value={ma2Username} onChange={e=>setMa2Username(e.target.value)}/></label>
+              <label>MA2 密码<Input.Password value={ma2Password} onChange={e=>setMa2Password(e.target.value)} placeholder="默认 administrator/admin"/></label>
+            </div>
+            <div className="ma2-option-list">
+              <Checkbox checked={ma2Options.importFixtureTypes} onChange={e=>setMa2Options({...ma2Options,importFixtureTypes:e.target.checked})}>导入 Fixture Type（本机尝试）</Checkbox>
+              <Checkbox checked={ma2Options.patchFixtures} onChange={e=>setMa2Options({...ma2Options,patchFixtures:e.target.checked})}>创建/同步 Layer 和 Patch</Checkbox>
+              <Checkbox checked={ma2Options.labelFixtures} onChange={e=>setMa2Options({...ma2Options,labelFixtures:e.target.checked})}>写入 Fixture 名称</Checkbox>
+            </div>
+            <div className="ma2-settings-help">
+              <b>同步策略</b>
+              <span>新增 Fixture ID 会通过 Layer XML 创建；已存在 Fixture 只更新 Patch/名称。</span>
+              <span>删除规划不会自动删除 MA2 灯具，避免已有 cue 因 Fixture ID 消失而失效。</span>
+              <span>Error #22 表示 EditSetup 被占用；关闭 Patch/Fixture Schedule 或重启 onPC 后再试。</span>
+            </div>
+          </section>
+        </div>
+        <aside className="ma2-result-panel">
+          <div className={`ma2-result-card ${ma2Result?(ma2Result.success?'success':'error'):'idle'}`}>
+            {ma2Result?(ma2Result.success?<CheckCircleOutlined/>:<CloseCircleOutlined/>):<ThunderboltOutlined/>}
+            <div><strong>{ma2Result?(ma2Result.success?'成功':'失败'):'等待执行'}</strong><span>{ma2Result?`已发送 ${ma2Result.sent} 条命令`:'日志将显示在这里'}</span></div>
+          </div>
+          {ma2Result&&<Button block onClick={()=>setMa2LogOpen(!ma2LogOpen)}>{ma2LogOpen?'收起日志':'查看日志与详情'}</Button>}
+          {ma2Result&&ma2LogOpen&&<div className="ma2-command-log">
+            {ma2Result.warnings?.map(w=><p className="warning" key={w}>{w}</p>)}
+            {ma2Result.errors?.map(err=><p className="error" key={err}>{err}</p>)}
+            {(ma2Result.feedback?.length?ma2Result.feedback:(ma2Result.commands||[]).map(command=>({command,feedback:''}))).map((entry,index)=><code key={`${entry.command}-${index}`}>$ {entry.command}{entry.feedback?`\n${entry.feedback.trim()}`:''}</code>)}
+          </div>}
+        </aside>
+      </div>
     </Modal>
 
     <footer><div className={validation.valid?'valid':'invalid'}>{validation.valid?<CheckCircleOutlined/>:<WarningOutlined/>} {validation.valid?'无通道冲突':`${validation.issues.length} 个问题`}</div><div><Tag color={validation.valid?'green':'red'}>MA2 XML</Tag><Tag color={validation.valid?'green':'red'}>MA3 / GDTF</Tag><Tag color={validation.valid?'green':'red'}>UE 5.7+</Tag></div><div>{validation.issues[0]?.message||`${mode?.channels.length||0} 个逻辑通道`}</div></footer>

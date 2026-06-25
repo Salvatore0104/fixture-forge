@@ -1,5 +1,6 @@
-import csv, io, json, re, uuid, zipfile
+﻿import csv, io, json, os, re, shutil, socket, tempfile, time, uuid, zipfile
 from datetime import datetime
+from pathlib import Path
 from lxml import etree
 from .schemas import FixtureDocument
 from .catalog import ATTRIBUTES
@@ -15,14 +16,14 @@ def validate_fixture(f: FixtureDocument):
         used = {}
         for ch in mode.channels:
             for address in range(ch.address, ch.address + bytes_for(ch)):
-                if address > 512: issues.append({"level":"error","code":"ADDRESS_OVERFLOW","message":f"{mode.name}：{ch.name} 超出512通道"})
-                if address in used: issues.append({"level":"error","code":"ADDRESS_CONFLICT","message":f"{mode.name}：地址 {address} 与 {used[address]} 重复"})
+                if address > 512: issues.append({"level":"error","code":"ADDRESS_OVERFLOW","message":f"{mode.name}: {ch.name} exceeds 512 channels"})
+                if address in used: issues.append({"level":"error","code":"ADDRESS_CONFLICT","message":f"{mode.name}: address {address} conflicts with {used[address]}"})
                 used[address] = ch.name
             ordered = sorted(ch.functions, key=lambda x:x.dmxFrom)
             for i, fn in enumerate(ordered):
-                if fn.dmxFrom > fn.dmxTo or fn.dmxTo > max_dmx(ch): issues.append({"level":"error","code":"FUNCTION_RANGE","message":f"{ch.name} 的功能范围无效"})
-                if i and fn.dmxFrom <= ordered[i-1].dmxTo: issues.append({"level":"error","code":"FUNCTION_OVERLAP","message":f"{ch.name} 的功能范围重叠"})
-                if i and fn.dmxFrom > ordered[i-1].dmxTo + 1: issues.append({"level":"warning","code":"FUNCTION_GAP","message":f"{ch.name} 的功能范围存在空洞"})
+                if fn.dmxFrom > fn.dmxTo or fn.dmxTo > max_dmx(ch): issues.append({"level":"error","code":"FUNCTION_RANGE","message":f"{ch.name} function range is invalid"})
+                if i and fn.dmxFrom <= ordered[i-1].dmxTo: issues.append({"level":"error","code":"FUNCTION_OVERLAP","message":f"{ch.name} function ranges overlap"})
+                if i and fn.dmxFrom > ordered[i-1].dmxTo + 1: issues.append({"level":"warning","code":"FUNCTION_GAP","message":f"{ch.name} function range has a gap"})
     return {"valid": not any(x["level"] == "error" for x in issues), "issues": issues}
 
 def export_ma2(f: FixtureDocument, mode_index=0):
@@ -53,7 +54,7 @@ def export_ma2(f: FixtureDocument, mode_index=0):
 def import_ma2(data: bytes):
     root = etree.fromstring(data, etree.XMLParser(resolve_entities=False, no_network=True, recover=False))
     ft = root.xpath('//*[local-name()="FixtureType"]')[0]
-    manufacturer = ''.join(ft.xpath('./*[local-name()="manufacturer"]/text()')) or "未知公司"
+    manufacturer = ''.join(ft.xpath('./*[local-name()="manufacturer"]/text()')) or "鏈煡鍏徃"
     short_m = ''.join(ft.xpath('./*[local-name()="short_manufacturer"]/text()'))
     channels=[]
     for i, ct in enumerate(ft.xpath('.//*[local-name()="ChannelType"]')):
@@ -66,7 +67,7 @@ def import_ma2(data: bytes):
         for fn in ct.xpath('./*[local-name()="ChannelFunction"]'):
             funcs.append({"id":str(uuid.uuid4()),"name":fn.get('name',attr),"dmxFrom":int(fn.get('from',0)),"dmxTo":int(fn.get('to',(1<<res)-1)),"physicalFrom":float(fn.get('physfrom',0)),"physicalTo":float(fn.get('physto',1)),"attribute":fn.get('attribute',attr)})
         channels.append({"id":str(uuid.uuid4()),"address":coarse,"attribute":attr,"group":ct.get('feature',meta['maFeature'] if meta else 'CONTROL'),"name":meta['ueAttribute'] if meta else attr,"resolution":res,"byteOrder":"MSB","defaultValue":int(ct.get('default',0)),"highlightValue":int(ct.get('highlight_value',(1<<res)-1)),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
-    return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('name','导入灯具'),"shortName":''.join(ft.xpath('./*[local-name()="short_name"]/text()')),"manufacturer":{"id":str(uuid.uuid4()),"name":manufacturer,"shortName":short_m},"category":"Other","version":"1.0","notes":"由 MA2 XML 导入","modes":[{"id":str(uuid.uuid4()),"name":ft.get('mode','默认模式'),"channels":channels}],"wheels":[]}
+    return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('name','瀵煎叆鐏叿'),"shortName":''.join(ft.xpath('./*[local-name()="short_name"]/text()')),"manufacturer":{"id":str(uuid.uuid4()),"name":manufacturer,"shortName":short_m},"category":"Other","version":"1.0","notes":"鐢?MA2 XML 瀵煎叆","modes":[{"id":str(uuid.uuid4()),"name":ft.get('mode','榛樿妯″紡'),"channels":channels}],"wheels":[]}
 
 def export_gdtf(f: FixtureDocument):
     feature_names={'DIMMER':('Dimmer','Dimmer'),'POSITION':('Position','PanTilt'),'GOBO':('Gobo','Gobo'),'COLOR':('Color','RGB'),'BEAM':('Beam','Beam'),'FOCUS':('Focus','Focus'),'CONTROL':('Control','Control')}
@@ -100,8 +101,8 @@ def export_gdtf(f: FixtureDocument):
 def import_gdtf(data: bytes):
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         infos=z.infolist()
-        if len(infos)>1000 or sum(x.file_size for x in infos)>50_000_000: raise ValueError('GDTF 压缩包过大')
-        if any('..' in x.filename.replace('\\','/').split('/') for x in infos): raise ValueError('GDTF 包含非法路径')
+        if len(infos)>1000 or sum(x.file_size for x in infos)>50_000_000: raise ValueError('GDTF archive is too large')
+        if any('..' in x.filename.replace('\\','/').split('/') for x in infos): raise ValueError('GDTF archive contains unsafe paths')
         xml=z.read('description.xml')
     root=etree.fromstring(xml,etree.XMLParser(resolve_entities=False,no_network=True))
     ft=root.find('.//FixtureType'); modes=[]
@@ -113,14 +114,14 @@ def import_gdtf(data: bytes):
                 raw=fn.get('DMXFrom','0/1').split('/')[0]; funcs.append({"id":str(uuid.uuid4()),"name":fn.get('Name',attr),"dmxFrom":int(raw),"dmxTo":(1<<(8*len(offsets)))-1,"physicalFrom":float(fn.get('PhysicalFrom',0)),"physicalTo":float(fn.get('PhysicalTo',1)),"attribute":fn.get('Attribute',attr)})
             default_raw=dc.get('Default') or (lc.find('./ChannelFunction').get('Default') if lc.find('./ChannelFunction') is not None else '0') or '0'; highlight_raw=dc.get('Highlight') or str((1<<(8*len(offsets)))-1); highlight_raw=str((1<<(8*len(offsets)))-1) if highlight_raw=='None' else highlight_raw; ma_attr=meta['ma2Attribute'] if meta else attr
             channels.append({"id":str(uuid.uuid4()),"address":offsets[0],"attribute":ma_attr,"group":meta['maFeature'] if meta else 'CONTROL',"name":meta['ueAttribute'] if meta else attr,"resolution":8*len(offsets),"byteOrder":"MSB","defaultValue":int(default_raw.split('/')[0]),"highlightValue":int(highlight_raw.split('/')[0]),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
-        modes.append({"id":str(uuid.uuid4()),"name":mn.get('Name','默认模式'),"channels":channels})
-    return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('Name','导入灯具'),"shortName":ft.get('ShortName',''),"manufacturer":{"id":str(uuid.uuid4()),"name":ft.get('Manufacturer','未知公司'),"shortName":""},"category":"Other","version":"1.0","notes":"由 GDTF 导入","modes":modes,"wheels":[]}
+        modes.append({"id":str(uuid.uuid4()),"name":mn.get('Name','榛樿妯″紡'),"channels":channels})
+    return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('Name','瀵煎叆鐏叿'),"shortName":ft.get('ShortName',''),"manufacturer":{"id":str(uuid.uuid4()),"name":ft.get('Manufacturer','鏈煡鍏徃'),"shortName":""},"category":"Other","version":"1.0","notes":"鐢?GDTF 瀵煎叆","modes":modes,"wheels":[]}
 
 def _checked_zip(data: bytes, label: str, max_entries=2000, max_size=150_000_000):
     archive=zipfile.ZipFile(io.BytesIO(data))
     infos=archive.infolist()
-    if len(infos)>max_entries or sum(x.file_size for x in infos)>max_size: raise ValueError(f'{label} 压缩包过大')
-    if any('..' in x.filename.replace('\\','/').split('/') or x.filename.startswith(('/', '\\')) for x in infos): raise ValueError(f'{label} 包含非法路径')
+    if len(infos)>max_entries or sum(x.file_size for x in infos)>max_size: raise ValueError(f'{label} archive is too large')
+    if any('..' in x.filename.replace('\\','/').split('/') or x.filename.startswith(('/', '\\')) for x in infos): raise ValueError(f'{label} archive contains unsafe paths')
     return archive
 
 def import_mvr_fixture_options(data: bytes):
@@ -139,17 +140,17 @@ def import_mvr_fixture_options(data: bytes):
         result=[]
         for index,name in enumerate(ordered):
             fixture=FixtureDocument.model_validate(import_gdtf(archive.read(names[name])))
-            fixture.notes='由 MVR 内嵌 GDTF 导入'
+            fixture.notes='鐢?MVR 鍐呭祵 GDTF 瀵煎叆'
             footprint=max((c.address+bytes_for(c)-1 for mode in fixture.modes for c in mode.channels),default=0)
             result.append({'key':name,'index':index,'name':fixture.name,'manufacturer':fixture.manufacturer.name,'modes':[m.name for m in fixture.modes],'footprint':footprint,'fixture':fixture.model_dump()})
         return result
 
 def export_ue_bundle(f: FixtureDocument):
     report=validate_fixture(f); mapping={"schemaVersion":"1.0","fixture":f.name,"manufacturer":f.manufacturer.name,"modes":[{"name":m.name,"footprint":max((c.address+bytes_for(c)-1 for c in m.channels),default=0),"channels":[{"address":c.address,"name":c.name,"maAttribute":c.attribute,"ueAttribute":c.ueAttribute,"resolution":c.resolution,"byteOrder":c.byteOrder} for c in m.channels]} for m in f.modes]}
-    script='''import json, os, unreal\n# 在 UE 5.7 编辑器中运行；读取同目录 ue-fixture-map.json 创建 DMX Library。\nroot=os.path.dirname(__file__)\nwith open(os.path.join(root,"ue-fixture-map.json"),encoding="utf-8") as h: data=json.load(h)\nunreal.log("Fixture Forge: loaded %s (%d modes)" % (data["fixture"],len(data["modes"])))\n# 推荐：先通过 DMXGDTF 插件导入同包内 .gdtf，再按映射检查 Blueprint 属性。\n'''
+    script='''import json, os, unreal\n# 鍦?UE 5.7 缂栬緫鍣ㄤ腑杩愯锛涜鍙栧悓鐩綍 ue-fixture-map.json 鍒涘缓 DMX Library銆俓nroot=os.path.dirname(__file__)\nwith open(os.path.join(root,"ue-fixture-map.json"),encoding="utf-8") as h: data=json.load(h)\nunreal.log("Fixture Forge: loaded %s (%d modes)" % (data["fixture"],len(data["modes"])))\n# 鎺ㄨ崘锛氬厛閫氳繃 DMXGDTF 鎻掍欢瀵煎叆鍚屽寘鍐?.gdtf锛屽啀鎸夋槧灏勬鏌?Blueprint 灞炴€с€俓n'''
     out=io.BytesIO(); filename=safe_name(f.name)
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-        z.writestr(filename+'.gdtf',export_gdtf(f)); z.writestr('ue-fixture-map.json',json.dumps(mapping,ensure_ascii=False,indent=2)); z.writestr('validation-report.json',json.dumps(report,ensure_ascii=False,indent=2)); z.writestr('import_ue_fixture.py',script); z.writestr('README.md',f'# {f.name} UE 5.7 导入包\n\n1. 启用 DMXEngine、DMXGDTF、DMXFixtures。\n2. 在内容浏览器导入 `{filename}.gdtf`。\n3. 使用 `ue-fixture-map.json` 核对 Blueprint 属性。\n4. 如需自动检查，在 UE Python 控制台运行 `import_ue_fixture.py`。\n')
+        z.writestr(filename+'.gdtf',export_gdtf(f)); z.writestr('ue-fixture-map.json',json.dumps(mapping,ensure_ascii=False,indent=2)); z.writestr('validation-report.json',json.dumps(report,ensure_ascii=False,indent=2)); z.writestr('import_ue_fixture.py',script); z.writestr('README.md',f'# {f.name} UE 5.7 瀵煎叆鍖匼n\n1. 鍚敤 DMXEngine銆丏MXGDTF銆丏MXFixtures銆俓n2. 鍦ㄥ唴瀹规祻瑙堝櫒瀵煎叆 `{filename}.gdtf`銆俓n3. 浣跨敤 `ue-fixture-map.json` 鏍稿 Blueprint 灞炴€с€俓n4. 濡傞渶鑷姩妫€鏌ワ紝鍦?UE Python 鎺у埗鍙拌繍琛?`import_ue_fixture.py`銆俓n')
     return out.getvalue()
 
 def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict]):
@@ -187,32 +188,126 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         for base,gdtf in gdtf_files.items(): archive.writestr(base+'.gdtf',gdtf)
     return out.getvalue()
 
-def export_ma2_patch_package(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict]):
-    """Build a grandMA2 helper package from the MVR patch plan.
+def _ma2_quote(value: str) -> str:
+    return str(value).replace('"', "'")
 
-    The package contains fixture type XML files plus a command macro/text file
-    that patches fixture IDs to the same universe/address used by the MVR plan.
-    """
+
+def _strip_ansi(value: str) -> str:
+    return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', value)
+
+
+def _ma2_read_feedback(sock, wait=0.2) -> str:
+    time.sleep(wait)
+    chunks=[]
+    while True:
+        try:
+            data=sock.recv(8192)
+            if not data:
+                break
+            chunks.append(data)
+        except socket.timeout:
+            break
+    return _strip_ansi(b''.join(chunks).decode('utf-8','replace'))
+
+
+def _ma2_feedback_errors(feedback: str) -> list[str]:
+    errors=[]
+    for line in feedback.replace('\r','\n').split('\n'):
+        text=line.strip()
+        if not text:
+            continue
+        upper=text.upper()
+        if 'LOGIN INCORRECT' in upper or 'LOGIN NEEDED' in upper or upper.startswith('ERROR #') or upper.startswith('ERROR :'):
+            errors.append(text)
+        elif 'WARNING, NO OBJECTS FOUND' in upper:
+            errors.append(text)
+        elif 'OVERWRITE CONFIRMATION' in upper or 'INVALID KEY' in upper:
+            errors.append(text)
+    return errors
+
+
+def _ma2_feedback_warnings(feedback: str) -> list[str]:
+    upper=feedback.upper()
+    warnings=[]
+    if 'ERROR #22' in upper or 'CANNOT ENTER DESTINATION' in upper:
+        warnings.append('MA2 rejected EditSetup access. Close Patch/Fixture Schedule/EditSetup windows or stale Telnet sessions, then retry.')
+    if 'ERROR #23' in upper and 'FILE NOT FOUND' in upper:
+        warnings.append('MA2 could not find the XML in the current object import folder.')
+    if 'NO OBJECTS FOUND' in upper:
+        warnings.append('MA2 could not find the requested Fixture ID.')
+    return warnings
+
+
+def _parse_fixturetype_numbers(feedback: str, wanted: set[str]) -> dict[str, int]:
+    result={}
+    for line in feedback.splitlines():
+        match=re.search(r'FixtureType\s+(\d+)\s+\d+\s+(.+)', line)
+        if not match:
+            continue
+        number=int(match.group(1))
+        rest=match.group(2)
+        for name in wanted:
+            if name in rest:
+                result[name]=number
+    return result
+
+
+def _ma2_data_dir(kind: str) -> str | None:
+    root=Path(os.environ.get('PROGRAMDATA', r'C:\ProgramData'))/'MA Lighting Technologies'/'grandma'
+    if not root.exists():
+        return None
+    candidates=sorted(root.glob('gma2_V_*'), key=lambda path: path.name, reverse=True)
+    for candidate in candidates:
+        target=candidate/kind
+        if target.exists():
+            return str(target)
+    return None
+
+
+def export_ma2_layer(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict], fixture_type_numbers: dict[str, int]):
+    safe_scene=safe_name(scene_name or 'FixtureForge_Layer')
+    root=etree.Element(f"{{{MA_NS}}}MA",nsmap={None:MA_NS,"xsi":"http://www.w3.org/2001/XMLSchema-instance"},major_vers='3',minor_vers='7',stream_vers='0')
+    etree.SubElement(root,f"{{{MA_NS}}}Info",datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),showfile='FixtureForge')
+    layer=etree.SubElement(root,f"{{{MA_NS}}}Layer",index='0',name=safe_scene[:31] or 'FixtureForge')
+    for index,item in enumerate(items):
+        fixture_doc=fixtures[item['fixtureId']]
+        fid=max(1,int(item.get('fid') or index+1))
+        universe=max(1,min(256,int(item.get('universe') or 1)))
+        address=max(1,min(512,int(item.get('address') or 1)))
+        absolute_address=(universe-1)*512+address
+        name=str(item.get('name') or f'{fixture_doc.name}_{index+1:04d}')
+        fixture=etree.SubElement(layer,f"{{{MA_NS}}}Fixture",index=str(index),name=name,fixture_id=str(fid),channel_id='0')
+        fixture_type=etree.SubElement(fixture,f"{{{MA_NS}}}FixtureType",name=fixture_doc.name)
+        etree.SubElement(fixture_type,f"{{{MA_NS}}}No").text=str(fixture_type_numbers.get(fixture_doc.name,0))
+        sub=etree.SubElement(fixture,f"{{{MA_NS}}}SubFixture",index='0',name=name)
+        patch=etree.SubElement(sub,f"{{{MA_NS}}}Patch")
+        etree.SubElement(patch,f"{{{MA_NS}}}Address").text=str(absolute_address)
+    return etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True)
+
+
+def _ma2_patch_assets(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict], include_imports=False, import_paths: dict[str, str] | None = None):
     safe_scene=safe_name(scene_name or 'FixtureForge_MA2_Patch')
     fixture_files={}
     commands=[
-        'CD Root',
-        'CD EditSetup',
-        'CD Layers',
+        'CD /',
     ]
+    if include_imports and import_paths:
+        commands.extend(['CD EditSetup','CD FixtureTypes'])
     rows=[]
+    imported=set()
     for index,item in enumerate(items,start=1):
         fixture_doc=fixtures[item['fixtureId']]
-        fixture_file=safe_name(f'{fixture_doc.manufacturer.name}_{fixture_doc.name}_{item.get("modeName") or fixture_doc.modes[0].name}')
+        mode_name=str(item.get('modeName') or (fixture_doc.modes[0].name if fixture_doc.modes else 'Profile'))
+        fixture_file=safe_name(f'{fixture_doc.manufacturer.name}_{fixture_doc.name}_{mode_name}')
         if fixture_file not in fixture_files:
             fixture_files[fixture_file]=export_ma2(fixture_doc)
+        if include_imports and import_paths and fixture_file in import_paths and fixture_file not in imported:
+            commands.append(f'Import "{_ma2_quote(import_paths[fixture_file])}"')
+            imported.add(fixture_file)
         fid=int(item.get('fid') or index)
         universe=max(1,min(256,int(item.get('universe') or 1)))
         address=max(1,min(512,int(item.get('address') or 1)))
         name=str(item.get('name') or f'{fixture_doc.name}_{index:04d}')
-        mode_name=str(item.get('modeName') or (fixture_doc.modes[0].name if fixture_doc.modes else 'Profile'))
-        commands.append(f'Assign Fixture {fid} At DMX {universe}.{address}')
-        commands.append(f'Label Fixture {fid} "{name}"')
         rows.append({
             'fid':fid,
             'name':name,
@@ -223,7 +318,180 @@ def export_ma2_patch_package(fixtures: dict[str, FixtureDocument], scene_name: s
             'address':address,
             'ma2_fixture_type_xml':fixture_file+'.xml',
         })
+    if include_imports and import_paths:
+        commands.append('CD /')
+    for row in rows:
+        commands.append(f'Assign Fixture {row["fid"]} At DMX {row["universe"]}.{row["address"]}')
+        commands.append(f'Label Fixture {row["fid"]} "{_ma2_quote(row["name"])}"')
     commands.append('CD Root')
+    return safe_scene, fixture_files, commands, rows
+
+
+def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], scene_name: str, ma2_ip="127.0.0.1", ma2_port=30000, username="", password="", options: dict | None = None):
+    options=options or {}
+    test_only=bool(options.get('testOnly'))
+    import_types=bool(options.get('importFixtureTypes', True))
+    patch_fixtures=bool(options.get('patchFixtures', True))
+    label_fixtures=bool(options.get('labelFixtures', True))
+    errors=[]
+    warnings=[]
+    sent_commands=[]
+    feedback_log=[]
+    temp_path=None
+    cleanup_files=[]
+    fixture_type_numbers={}
+    layer_file=None
+    is_local=ma2_ip in {'127.0.0.1','localhost','::1'}
+    try:
+        with socket.create_connection((ma2_ip, int(ma2_port or 30000)), timeout=3) as sock:
+            sock.settimeout(0.35)
+            _ma2_read_feedback(sock, wait=0.35)
+            login=f'Login "{_ma2_quote(username)}" "{_ma2_quote(password)}"' if username or password else None
+            if login:
+                sock.sendall((login+'\r\n').encode('utf-8'))
+                sent_commands.append(login)
+                feedback=_ma2_read_feedback(sock)
+                feedback_log.append({'command':login,'feedback':feedback})
+                errors.extend(_ma2_feedback_errors(feedback))
+                if errors:
+                    return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+            if test_only:
+                return {'success':True,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+            if not items:
+                raise ValueError('MA2 push requires at least one fixture item')
+            import_paths=None
+            if import_types and is_local:
+                import_dir=_ma2_data_dir('library')
+                if import_dir:
+                    temp_path=import_dir
+                else:
+                    temp_path=tempfile.mkdtemp(prefix='fixture-forge-ma2-import-')
+                    warnings.append('MA2 library directory was not found; Import may not be able to read the temporary XML file.')
+                _, fixture_files, _, _=_ma2_patch_assets(fixtures, scene_name, items)
+                import_paths={}
+                for fixture_file,xml in fixture_files.items():
+                    path=os.path.join(temp_path, fixture_file+'.xml')
+                    with open(path,'wb') as handle:
+                        handle.write(xml)
+                    cleanup_files.append(path)
+                    import_paths[fixture_file]=fixture_file+'.xml' if import_dir else path
+            elif import_types and not is_local:
+                warnings.append('Remote MA2 cannot read local Fixture Forge XML files; skipped automatic FixtureType import. Use the MA2 patch package fallback.')
+            _, fixture_files, commands, _=_ma2_patch_assets(fixtures, scene_name, items, include_imports=bool(import_paths), import_paths=import_paths)
+            filtered=[]
+            for command in commands:
+                if command.startswith('Import ') and not import_types:
+                    continue
+                if command.startswith('Assign Fixture ') and (not patch_fixtures or is_local):
+                    continue
+                if command.startswith('Label Fixture ') and (not label_fixtures or is_local):
+                    continue
+                filtered.append(command)
+            for command in filtered:
+                sock.sendall((command+'\r\n').encode('utf-8'))
+                sent_commands.append(command)
+                feedback=_ma2_read_feedback(sock)
+                feedback_log.append({'command':command,'feedback':feedback})
+                command_errors=_ma2_feedback_errors(feedback)
+                errors.extend(command_errors)
+                warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
+                if command_errors:
+                    break
+                if command.startswith('Import ') and import_types and is_local:
+                    sock.sendall(('List\r\n').encode('utf-8'))
+                    sent_commands.append('List')
+                    feedback=_ma2_read_feedback(sock, wait=0.35)
+                    feedback_log.append({'command':'List','feedback':feedback})
+                    wanted={doc.name for doc in fixtures.values()}
+                    fixture_type_numbers.update(_parse_fixturetype_numbers(feedback,wanted))
+            if not errors and is_local and (patch_fixtures or label_fixtures):
+                existing_items=[]
+                missing_items=[]
+                for item in items:
+                    fid=max(1,int(item.get('fid') or len(existing_items)+len(missing_items)+1))
+                    probe=f'List Fixture {fid}'
+                    sock.sendall((probe+'\r\n').encode('utf-8'))
+                    sent_commands.append(probe)
+                    feedback=_ma2_read_feedback(sock)
+                    feedback_log.append({'command':probe,'feedback':feedback})
+                    if 'NO OBJECTS FOUND' in feedback.upper():
+                        missing_items.append(item)
+                        continue
+                    command_errors=_ma2_feedback_errors(feedback)
+                    errors.extend(command_errors)
+                    warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
+                    if command_errors:
+                        break
+                    existing_items.append(item)
+                if not errors:
+                    if existing_items:
+                        warnings.append('Existing MA2 fixtures were updated in place; FixtureType replacement and deletion are skipped to protect cues.')
+                    for item in existing_items:
+                        fid=max(1,int(item.get('fid') or 1))
+                        universe=max(1,min(256,int(item.get('universe') or 1)))
+                        address=max(1,min(512,int(item.get('address') or 1)))
+                        name=str(item.get('name') or f'Fixture_{fid:04d}')
+                        update_commands=[]
+                        if patch_fixtures:
+                            update_commands.append(f'Assign Fixture {fid} At DMX {universe}.{address}')
+                        if label_fixtures:
+                            update_commands.append(f'Label Fixture {fid} "{_ma2_quote(name)}"')
+                        for command in update_commands:
+                            sock.sendall((command+'\r\n').encode('utf-8'))
+                            sent_commands.append(command)
+                            feedback=_ma2_read_feedback(sock)
+                            feedback_log.append({'command':command,'feedback':feedback})
+                            command_errors=_ma2_feedback_errors(feedback)
+                            errors.extend(command_errors)
+                            warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
+                            if command_errors:
+                                break
+                        if errors:
+                            break
+                if not errors and missing_items:
+                    missing=[fixtures[item['fixtureId']].name for item in missing_items if fixtures[item['fixtureId']].name not in fixture_type_numbers]
+                    if missing:
+                        errors.append('Unable to resolve MA2 FixtureType number(s): '+', '.join(missing))
+                    else:
+                        layer_dir=_ma2_data_dir('importexport')
+                        if not layer_dir:
+                            errors.append('MA2 importexport directory was not found; cannot import Layer XML automatically.')
+                        else:
+                            layer_file=safe_name(scene_name or 'FixtureForge')+'_layer.xml'
+                            layer_path=os.path.join(layer_dir, layer_file)
+                            with open(layer_path,'wb') as handle:
+                                handle.write(export_ma2_layer(fixtures, scene_name, missing_items, fixture_type_numbers))
+                            cleanup_files.append(layer_path)
+                            warnings.append(f'Added {len(missing_items)} new MA2 fixture(s). Old MA2 fixtures not present in this plan were kept to protect cues.')
+                            for command in ['CD /','CD EditSetup','CD Layers',f'Import "{_ma2_quote(layer_file)}"','CD Root']:
+                                sock.sendall((command+'\r\n').encode('utf-8'))
+                                sent_commands.append(command)
+                                feedback=_ma2_read_feedback(sock)
+                                feedback_log.append({'command':command,'feedback':feedback})
+                                command_errors=_ma2_feedback_errors(feedback)
+                                errors.extend(command_errors)
+                                warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
+                                if command_errors:
+                                    break
+            return {'success':not errors,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[name+'.xml' for name in fixture_files],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+    except Exception as exc:
+        errors.append(str(exc))
+        return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+    finally:
+        for path in cleanup_files:
+            try: os.remove(path)
+            except OSError: pass
+        if temp_path and 'fixture-forge-ma2-import-' in os.path.basename(temp_path):
+            shutil.rmtree(temp_path, ignore_errors=True)
+
+
+def export_ma2_patch_package(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict]):
+    """Build a grandMA2 helper package from the MVR patch plan.
+
+    The package contains fixture type XML files plus a command macro/text file
+    that patches fixture IDs to the same universe/address used by the MVR plan.
+    """
+    safe_scene, fixture_files, commands, rows=_ma2_patch_assets(fixtures, scene_name, items)
     macro=etree.Element(f"{{{MA_NS}}}MA",nsmap={None:MA_NS},major_vers='2',minor_vers='8',stream_vers='123')
     macros=etree.SubElement(macro,f"{{{MA_NS}}}Macros")
     macro_node=etree.SubElement(macros,f"{{{MA_NS}}}Macro",name=safe_scene)

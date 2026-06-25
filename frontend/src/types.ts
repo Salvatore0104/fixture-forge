@@ -8,3 +8,7 @@ export interface FixtureDocument{id:string;schemaVersion:string;revision:number;
 export interface Preset{id:string;name:string;kind:'channel'|'mode'|'fixture';manufacturer:string;tags:string[];description:string;version:string;payload:Record<string,unknown>}
 export interface Catalog{version:string;groups:AttributeGroup[];attributes:AttributeDef[]}
 export interface MvrImportOption{key:string;index:number;name:string;manufacturer:string;modes:string[];footprint:number}
+export interface MvrItem{id:string;fixtureId:string;fid:number;modeName:string;universe:number;address:number;color:string;name:string}
+export interface Ma2Device{ip:string;hostname?:string;remotePort:number;webPort?:number|null;detectedBy:string[];isLocal:boolean}
+export interface PushPayload{sceneName:string;items:MvrItem[];ma2Ip:string;ma2Port:number;username?:string;password?:string;options?:{importFixtureTypes?:boolean;patchFixtures?:boolean;labelFixtures?:boolean;testOnly?:boolean}}
+export interface PushResult{success:boolean;sent:number;errors:string[];warnings?:string[];files?:string[];tempPath?:string|null;commands?:string[];feedback?:{command:string;feedback:string}[]}

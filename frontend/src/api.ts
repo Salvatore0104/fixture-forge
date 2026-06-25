@@ -1,4 +1,4 @@
-import type {Catalog,FixtureDocument,MvrImportOption,Preset} from './types';
+import type {Catalog,FixtureDocument,Ma2Device,MvrImportOption,Preset,PushPayload,PushResult} from './types';
 
 const parse=async(r:Response)=>{if(!r.ok)throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail||'请求失败');return r.json()};
 
@@ -28,6 +28,8 @@ export const api={
   importFile:async(file:File)=>{const body=new FormData();body.append('file',file);const kind=file.name.toLowerCase().endsWith('.gdtf')?'gdtf':'ma2';return fetch(`/api/import/${kind}`,{method:'POST',body}).then(parse) as Promise<FixtureDocument>},
   previewMvr:async(file:File)=>{const body=new FormData();body.append('file',file);return fetch('/api/import/mvr/preview',{method:'POST',body}).then(parse) as Promise<MvrImportOption[]>},
   importMvr:async(file:File,selected:number[])=>{const body=new FormData();body.append('file',file);return fetch(`/api/import/mvr?selected=${encodeURIComponent(selected.join(','))}`,{method:'POST',body}).then(parse) as Promise<FixtureDocument[]>},
+  scanMa2Network:()=>fetch('/api/network/scan-ma2').then(parse) as Promise<Ma2Device[]>,
+  pushToMa2:(payload:PushPayload)=>fetch('/api/export/ma2-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(parse) as Promise<PushResult>,
   presets:()=>fetch('/api/presets').then(parse) as Promise<Preset[]>,
   savePreset:(p:Preset)=>fetch('/api/presets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(parse),
   removePreset:(id:string)=>fetch(`/api/presets/${id}`,{method:'DELETE'}).then(parse)
