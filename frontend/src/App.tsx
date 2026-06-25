@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+﻿import {useEffect,useMemo,useRef,useState} from 'react';
 import {App as AntApp,Button,Checkbox,Divider,Empty,Input,InputNumber,Modal,Popconfirm,Select,Switch,Tag,Tooltip} from 'antd';
 import {ApartmentOutlined,CheckCircleOutlined,CopyOutlined,DeleteOutlined,DownloadOutlined,HolderOutlined,PlusOutlined,SaveOutlined,SearchOutlined,SettingOutlined,UploadOutlined,WarningOutlined} from '@ant-design/icons';
 import {arrayMove} from '@dnd-kit/sortable';
@@ -471,7 +471,50 @@ function Workbench(){
       setPatchSelectionAnchor(id);
     }
     const item=mvrItems.find(x=>x.id===id);
-    if(item)setUniverseView(item.universe);
+    if(item){scrollDrivenUniverseRef.current=false;setUniverseView(item.universe);}
+  };
+
+  /** Dedicated patch row click: selection + direct universe scroll (no effect dependency) */
+  /** Patch row click: navigation only (selection handled by onPointerDown for reliable ctrlKey) */
+  const handlePatchRowClick=(id:string,e:React.MouseEvent)=>{
+    e.stopPropagation();
+    const ctrl=e.ctrlKey||e.metaKey;
+    const shift=e.shiftKey;
+    // Plain click without modifiers: select single item
+    if(!ctrl&&!shift){
+      setPatchSelection([id]);
+      setPatchSelectionAnchor(id);
+    }
+    // Always navigate to the item's universe
+    const item=mvrItems.find(x=>x.id===id);
+    if(item){
+      setUniverseView(item.universe);
+      requestAnimationFrame(()=>{
+        universeScrollRef.current?.scrollTo({top:(item.universe-1)*UNIVERSE_SECTION_HEIGHT,behavior:'smooth'});
+      });
+    }
+  };
+
+  /** Patch row pointerdown: capture ctrl/shift reliably at press time for multi-select */
+  const handlePatchRowPointerDown=(id:string,e:React.PointerEvent)=>{
+    e.preventDefault();
+    const ctrl=e.ctrlKey||e.metaKey;
+    const shift=e.shiftKey;
+    if(ctrl){
+      const next=selectedPatchIds.includes(id)?selectedPatchIds.filter(x=>x!==id):[...selectedPatchIds,id];
+      setPatchSelection(next.length?next:[id]);
+      setPatchSelectionAnchor(id);
+    }else if(shift&&patchSelectionAnchor){
+      const allIds=mvrItems.map(i=>i.id);
+      const a=allIds.indexOf(patchSelectionAnchor);
+      const b=allIds.indexOf(id);
+      if(a>=0&&b>=0){
+        const [from,to]=a<b?[a,b]:[b,a];
+        setPatchSelection(allIds.slice(from,to+1));
+      }
+    }else{
+      setPatchSelectionAnchor(id);
+    }
   };
 
   const patchPositionFromPointer=(x:number,y:number)=>{
@@ -482,16 +525,38 @@ function Workbench(){
     const rect=grid.getBoundingClientRect();
     if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return;
     const col=Math.max(0,Math.min(31,Math.floor((x-rect.left)/(grid.clientWidth/32))));
-    const row=Math.max(0,Math.min(15,Math.floor((y-rect.top)/24)));
+    const rowHeight=grid.clientHeight/16;
+    const row=Math.max(0,Math.min(15,Math.floor((y-rect.top)/rowHeight)));
     return {universe:Math.max(1,Math.min(UNIVERSE_COUNT,Number(section?.dataset.universe)||universeView)),address:row*32+col+1};
   };
 
-  const movePatchGroup=(ids:string[],targetUniverse:number,targetAddress:number)=>{
+  const movePatchGroup=(ids:string[],targetUniverse:number,targetAddress:number,anchorId?:string)=>{
     const orderedIds=sortedPatchIds(ids);
     if(!orderedIds.length)return;
     setMvrItems(items=>{
       const byId=new Map(items.map(item=>[item.id,item]));
-      let cursor={universe:Math.max(1,Math.min(UNIVERSE_COUNT,targetUniverse)),address:Math.max(1,Math.min(512,targetAddress))};
+      // Calculate how many channels precede the anchor in the sorted group
+      let offsetChannels=0;
+      let foundAnchor=false;
+      if(anchorId){
+        for(const id of orderedIds){
+          if(id===anchorId){foundAnchor=true;break;}
+          const item=byId.get(id);
+          if(item)offsetChannels+=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
+        }
+      }
+
+      // Offset the cursor so the anchor item lands at the target position
+      let startAddr=targetAddress-(foundAnchor?offsetChannels:0);
+      let startUni=targetUniverse;
+      while(startAddr<1&&startUni>1){
+        startUni-=1;
+        startAddr+=512;
+      }
+      startAddr=Math.max(1,startAddr);
+      startUni=Math.max(1,Math.min(UNIVERSE_COUNT,startUni));
+
+      let cursor={universe:startUni,address:startAddr};
       const updates=new Map<string,Pick<MvrItem,'universe'|'address'>>();
       orderedIds.forEach(id=>{
         const item=byId.get(id);
@@ -506,25 +571,47 @@ function Workbench(){
     setPatchSelection(orderedIds);
     setPatchSelectionAnchor(orderedIds[0]);
     setSelectedPatch(orderedIds[0]);
-    setUniverseView(targetUniverse);
+    if(!anchorId)setUniverseView(targetUniverse);
   };
 
   const startPatchDrag=(id:string,e:React.PointerEvent<HTMLDivElement>)=>{
     e.preventDefault();
     e.stopPropagation();
-    const draggedIds=sortedPatchIds(selectedPatchIds.includes(id)?selectedPatchIds:[id]);
+    const ctrl=e.ctrlKey||e.metaKey;
+    const shift=e.shiftKey;
+    let draggedIds:string[];
+    if(shift&&patchSelectionAnchor){
+      const allIds=mvrItems.map(i=>i.id);
+      const a=allIds.indexOf(patchSelectionAnchor);
+      const b=allIds.indexOf(id);
+      if(a>=0&&b>=0){
+        const [from,to]=a<b?[a,b]:[b,a];
+        draggedIds=sortedPatchIds(allIds.slice(from,to+1));
+      }else{
+        draggedIds=sortedPatchIds([id]);
+      }
+    }else if(ctrl){
+      const next=selectedPatchIds.includes(id)?selectedPatchIds.filter(x=>x!==id):[...selectedPatchIds,id];
+      draggedIds=sortedPatchIds(next.length?next:[id]);
+    }else{
+      // If clicking on an already-selected item, keep the whole selection for multi-drag
+      if(selectedPatchIds.includes(id)){
+        draggedIds=sortedPatchIds(selectedPatchIds);
+      }else{
+        draggedIds=sortedPatchIds([id]);
+      }
+    }
     setPatchSelection(draggedIds);
     setPatchSelectionAnchor(draggedIds[0]);
     setSelectedPatch(draggedIds[0]);
     const move=(ev:PointerEvent)=>{
       const pos=patchPositionFromPointer(ev.clientX,ev.clientY);
       if(!pos)return;
-      movePatchGroup(draggedIds,pos.universe,pos.address);
+      movePatchGroup(draggedIds,pos.universe,pos.address,id);
     };
     const up=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)};
     window.addEventListener('pointermove',move);
     window.addEventListener('pointerup',up);
-    move(e.nativeEvent);
   };
 
  const sortFixtureTo=(targetId:string)=>{
@@ -655,7 +742,7 @@ function Workbench(){
       {showAllUniverses&&<div className="universe-section-title">Universe {universe}</div>}
       <div ref={universe===universeView?universeGridRef:undefined} className="universe-grid" onClick={e=>{if((e.target as HTMLElement).closest('.universe-bar'))return;clearPatchSelection();}}>
         {Array.from({length:512},(_,i)=>i+1).map(ch=><div key={ch} data-channel={ch} className={`universe-cell ${universeLayout.occupied.get(universe)?.has(ch)?'occupied':''}`} title={`Universe ${universe} · CH ${ch}`} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/patch-id');if(id){const ids=selectedPatchIds.includes(id)?selectedPatchIds:[id];movePatchGroup(ids,universe,ch)}}}><span>{ch}</span></div>)}
-        {(universeLayout.bars.get(universe)||[]).map(seg=><div key={`${seg.item.id}-${seg.start}`} className={`universe-bar ${selectedPatchIds.includes(seg.item.id)?'selected':''}`} style={{left:`calc(${seg.col-1} * 100% / 32)`,top:`calc(${seg.row-1} * var(--dmx-cell-h))`,width:`calc(${seg.span} * 100% / 32)`,backgroundColor:rgba(seg.item.color,selectedPatchIds.includes(seg.item.id)?0.34:0.22),borderColor:seg.item.color}} title={`${seg.item.name} · U${universe} ${seg.start}-${seg.end}`} onClick={e=>{e.stopPropagation();selectPatchRow(seg.item.id,e)}} onPointerDown={e=>startPatchDrag(seg.item.id,e)}><b>{seg.start===seg.item.address?seg.item.name:''}</b></div>)}
+        {(universeLayout.bars.get(universe)||[]).map(seg=><div key={`${seg.item.id}-${seg.start}`} className={`universe-bar ${selectedPatchIds.includes(seg.item.id)?'selected':''}`} style={{left:`calc(${seg.col-1} * 100% / 32)`,top:`calc(${seg.row-1} * var(--dmx-cell-h))`,width:`calc(${seg.span} * 100% / 32)`,backgroundColor:rgba(seg.item.color,selectedPatchIds.includes(seg.item.id)?0.34:0.22),borderColor:seg.item.color}} title={`${seg.item.name} · U${universe} ${seg.start}-${seg.end}`} onClick={e=>e.stopPropagation()} onPointerDown={e=>startPatchDrag(seg.item.id,e)}><b>{seg.start===seg.item.address?seg.item.name:''}</b></div>)}
       </div>
     </section>
   );
@@ -729,7 +816,7 @@ function Workbench(){
                 const f=fixtureById.get(item.fixtureId);
                 if(!f)return null;
                 const editing=editingPatchId===item.id;
-                return <div key={item.id} className={`patch-row ${selectedPatchIds.includes(item.id)?'selected':''} ${editing?'editing':''}`} onClick={e=>selectPatchRow(item.id,e)} onDoubleClick={e=>{e.stopPropagation();setPatchSelection([item.id]);setPatchSelectionAnchor(item.id);setEditingPatchId(item.id);setSelectedPatch(item.id);setUniverseView(item.universe)}}>
+                return <div key={item.id} className={`patch-row ${selectedPatchIds.includes(item.id)?'selected':''} ${editing?'editing':''}`} onPointerDown={e=>handlePatchRowPointerDown(item.id,e)} onClick={e=>handlePatchRowClick(item.id,e)} onDoubleClick={e=>{e.stopPropagation();setPatchSelection([item.id]);setPatchSelectionAnchor(item.id);setEditingPatchId(item.id);setSelectedPatch(item.id);setUniverseView(item.universe)}}>
                   {editing?<Input autoFocus value={item.name} onChange={e=>patchMvrItem(item.id,{name:e.target.value})}/>:<span className="patch-cell-name">{item.name}</span>}
                   {editing?<InputNumber min={1} value={item.fid} onChange={v=>patchMvrItem(item.id,{fid:v||1})}/>:<span>{item.fid}</span>}
                   {editing?<Select value={item.fixtureId} onChange={v=>{const nf=fixtureById.get(v)!;patchMvrItem(item.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'})}} options={fixtures.map(x=>({value:x.id,label:x.name}))}/>:<span className="patch-cell-name">{f.name}</span>}
