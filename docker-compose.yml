@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: fixture-forge-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////app/data/fixture-forge.db
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: fixture-forge-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"

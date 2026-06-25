@@ -1,0 +1,12 @@
+.git
+frontend/node_modules
+frontend/output
+__pycache__
+*.pyc
+.venv
+api.tar
+web.tar
+proxy_stdout.txt
+proxy_stderr.txt
+stdout.txt
+stderr.txt

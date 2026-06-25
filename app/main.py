@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .schemas import FixtureDocument, Preset, Manufacturer
 from .db import list_records, get_record, save_record, delete_record
 from .catalog import GROUPS, ATTRIBUTES
-from .formats import import_ma2, import_gdtf, import_mvr_fixture_options, export_ma2, export_gdtf, export_ue_bundle, export_mvr_scene, validate_fixture, safe_name
+from .formats import import_ma2, import_gdtf, import_mvr_fixture_options, export_ma2, export_gdtf, export_ue_bundle, export_mvr_scene, export_ma2_patch_package, validate_fixture, safe_name
 
 app=FastAPI(title='Fixture Forge API',version='1.0.0')
 app.add_middleware(CORSMiddleware,allow_origins=['*'],allow_methods=['*'],allow_headers=['*'])
@@ -123,6 +123,18 @@ def mvr_export(payload:dict):
         documents[fixture_id]=FixtureDocument.model_validate(value)
     scene_name=str(payload.get('sceneName') or 'FixtureForge_MVR')
     return Response(export_mvr_scene(documents,scene_name,items),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{safe_name(scene_name)}.mvr"'})
+
+@app.post('/api/export/ma2-patch')
+def ma2_patch_export(payload:dict):
+    items=payload.get('items') or []
+    if not items: raise HTTPException(400,'MA2 配接包至少需要一个灯具实例')
+    fixture_ids={str(item.get('fixtureId')) for item in items}; documents={}
+    for fixture_id in fixture_ids:
+        value=get_record(fixture_id,'fixture')
+        if not value: raise HTTPException(404,f'灯具不存在：{fixture_id}')
+        documents[fixture_id]=FixtureDocument.model_validate(value)
+    scene_name=str(payload.get('sceneName') or 'FixtureForge_MA2_Patch')
+    return Response(export_ma2_patch_package(documents,scene_name,items),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{safe_name(scene_name)}-MA2Patch.zip"'})
 
 @app.get('/api/presets')
 def presets(): return list_records('preset')

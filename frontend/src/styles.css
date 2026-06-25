@@ -931,3 +931,105 @@
 .mvr-mode .universe-section .universe-cell{
   pointer-events:none!important;
 }
+
+/* UE reference pass: double-height channels, bottom-aligned numbers, readable fixture labels. */
+.mvr-mode .universe-section{
+  height:824px!important;
+  padding:0 0 20px!important;
+}
+.mvr-mode .universe-section .universe-grid{
+  --dmx-cell-h:48px!important;
+  height:768px!important;
+  grid-auto-rows:var(--dmx-cell-h)!important;
+  overflow:hidden!important;
+}
+.mvr-mode .universe-section .universe-cell{
+  align-items:flex-end!important;
+  justify-content:center!important;
+  padding:0 2px 6px!important;
+  background:rgba(22,45,28,.16)!important;
+  outline:1px solid rgba(99,185,111,.42)!important;
+  font-size:10px!important;
+  line-height:1!important;
+  pointer-events:none!important;
+}
+.mvr-mode .universe-section .universe-cell span,
+.mvr-mode .universe-section .universe-cell.occupied span{
+  visibility:visible!important;
+  color:#e7f7e9!important;
+  font-size:10px!important;
+  font-weight:500!important;
+  text-shadow:0 1px 2px rgba(0,0,0,.95)!important;
+}
+.mvr-mode .universe-section .universe-bar{
+  height:46px!important;
+  margin:1px!important;
+  border:2px solid #55d66a!important;
+  border-radius:4px!important;
+  background-color:rgba(54,167,68,.18)!important;
+  background-image:none!important;
+  box-shadow:inset 0 0 0 1px rgba(180,255,190,.18),0 0 0 1px rgba(0,0,0,.55)!important;
+}
+.mvr-mode .universe-section .universe-bar.selected{
+  border-color:#b6ff79!important;
+  outline:2px solid rgba(214,255,127,.85)!important;
+  outline-offset:-4px!important;
+}
+.mvr-mode .universe-section .universe-bar b{
+  position:absolute!important;
+  left:3px!important;
+  top:3px!important;
+  max-width:calc(100% - 8px)!important;
+  padding:1px 5px!important;
+  border-radius:3px!important;
+  background:rgba(0,0,0,.86)!important;
+  color:#fff!important;
+  font-size:10px!important;
+  font-weight:800!important;
+  line-height:14px!important;
+  text-shadow:none!important;
+}
+
+/* Final requested density: 1/3 lower than 48px UE pass, gray default cells. */
+.mvr-mode .universe-section{
+  height:568px!important;
+  padding:0 0 16px!important;
+}
+.mvr-mode .universe-section .universe-grid{
+  --dmx-cell-h:32px!important;
+  height:512px!important;
+  grid-auto-rows:var(--dmx-cell-h)!important;
+}
+.mvr-mode .universe-section .universe-cell{
+  align-items:flex-end!important;
+  justify-content:center!important;
+  padding:0 2px 4px!important;
+  background:rgba(34,39,43,.42)!important;
+  outline:1px solid rgba(116,128,134,.42)!important;
+  font-size:10px!important;
+  line-height:1!important;
+  pointer-events:none!important;
+}
+.mvr-mode .universe-section .universe-cell span,
+.mvr-mode .universe-section .universe-cell.occupied span{
+  visibility:visible!important;
+  color:#dce7eb!important;
+  font-size:10px!important;
+  font-weight:500!important;
+  text-shadow:0 1px 2px rgba(0,0,0,.95)!important;
+}
+.mvr-mode .universe-section .universe-bar{
+  height:30px!important;
+  margin:1px!important;
+  border:2px solid #55d66a!important;
+  border-radius:4px!important;
+  background-color:rgba(54,167,68,.14)!important;
+  background-image:none!important;
+}
+.mvr-mode .universe-section .universe-bar b{
+  top:2px!important;
+  line-height:12px!important;
+  padding:1px 4px!important;
+  background:rgba(0,0,0,.88)!important;
+  color:#fff!important;
+}

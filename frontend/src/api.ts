@@ -1,5 +1,20 @@
 import type {Catalog,FixtureDocument,MvrImportOption,Preset} from './types';
+
 const parse=async(r:Response)=>{if(!r.ok)throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail||'请求失败');return r.json()};
+
+const downloadBlob=async(response:Response,fallback:string)=>{
+  if(!response.ok)throw new Error((await response.json().catch(()=>({detail:response.statusText}))).detail||fallback);
+  const blob=await response.blob();
+  const disposition=response.headers.get('content-disposition')||'';
+  const name=disposition.match(/filename="?([^";]+)"?/i)?.[1]||fallback;
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=name;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+
 export const api={
   catalog:()=>fetch('/api/attributes').then(parse) as Promise<Catalog>,
   createAttribute:(value:Record<string,string>)=>fetch('/api/attributes/custom',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)}).then(parse),
@@ -17,5 +32,7 @@ export const api={
   savePreset:(p:Preset)=>fetch('/api/presets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(parse),
   removePreset:(id:string)=>fetch(`/api/presets/${id}`,{method:'DELETE'}).then(parse)
 };
+
 export function download(path:string){const a=document.createElement('a');a.href=path;a.click()}
-export async function downloadMvr(payload:Record<string,unknown>){const response=await fetch('/api/export/mvr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!response.ok)throw new Error((await response.json()).detail||'MVR生成失败');const blob=await response.blob();const disposition=response.headers.get('content-disposition')||'';const name=disposition.match(/filename="?([^";]+)"?/i)?.[1]||'FixtureForge.mvr';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+export async function downloadMvr(payload:Record<string,unknown>){await downloadBlob(await fetch('/api/export/mvr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),'FixtureForge.mvr')}
+export async function downloadMa2Patch(payload:Record<string,unknown>){await downloadBlob(await fetch('/api/export/ma2-patch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),'FixtureForge-MA2Patch.zip')}

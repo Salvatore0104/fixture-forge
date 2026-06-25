@@ -2,7 +2,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {App as AntApp,Button,Checkbox,Divider,Empty,Input,InputNumber,Modal,Popconfirm,Select,Switch,Tag,Tooltip} from 'antd';
 import {ApartmentOutlined,CheckCircleOutlined,CopyOutlined,DeleteOutlined,DownloadOutlined,HolderOutlined,PlusOutlined,SaveOutlined,SearchOutlined,SettingOutlined,UploadOutlined,WarningOutlined} from '@ant-design/icons';
 import {arrayMove} from '@dnd-kit/sortable';
-import {api,download,downloadMvr} from './api';
+import {api,download,downloadMa2Patch,downloadMvr} from './api';
 import {draft} from './draft';
 import {useStore} from './store';
 import {compactModeAddresses,modeFootprint,removeChannelAndCompact} from './model';
@@ -11,7 +11,7 @@ import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,MvrImportOption,Res
 const uid=()=>crypto.randomUUID();
 const patchColors=['#18d5e8','#75e900','#2820bb','#ffb000','#d44aff','#ff4d4f','#00b578','#4096ff'];
 const UNIVERSE_COUNT=256;
-const UNIVERSE_SECTION_HEIGHT=452;
+const UNIVERSE_SECTION_HEIGHT=568;
 const rgba=(hex:string,alpha:number)=>{
   const value=hex.replace('#','');
   if(value.length!==6)return hex;
@@ -598,6 +598,14 @@ function Workbench(){
       message.error((e as Error).message);
     }
   };
+  const generateMa2Patch=async()=>{
+    try{
+      await downloadMa2Patch({sceneName,items:mvrItems});
+      message.success('MA2 配接包已生成，包含 FixtureType、配接清单和宏命令');
+    }catch(e){
+      message.error((e as Error).message);
+    }
+  };
   const clearMvrDraft=()=>{
     setMvrItems([]);
     setSelectedPatch(undefined);
@@ -640,12 +648,6 @@ function Workbench(){
 
   const handleUniverseScroll=(top:number)=>{
     setUniverseScrollTop(top);
-    const current=Math.max(1,Math.min(UNIVERSE_COUNT,Math.floor(top/UNIVERSE_SECTION_HEIGHT)+1));
-    setUniverseView(prev=>{
-      if(prev===current)return prev;
-      scrollDrivenUniverseRef.current=true;
-      return current;
-    });
   };
 
   const renderUniverseSection=(universe:number,offsetTop?:number)=>(
@@ -684,6 +686,7 @@ function Workbench(){
             <Button danger icon={<DeleteOutlined/>} disabled={!mvrItems.length}>清除</Button>
           </Popconfirm>
           <Button type="primary" icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMvr}>生成 MVR</Button>
+          <Button icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMa2Patch}>生成 MA2配接包</Button>
         </>}
       </div>
     </header>
