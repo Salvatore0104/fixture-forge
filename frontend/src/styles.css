@@ -196,8 +196,7 @@
 }
 .mvr-mode .patch-row:not(.editing) .ant-input,
 .mvr-mode .patch-row:not(.editing) .ant-input-number,
-.mvr-mode .patch-row:not(.editing) .ant-select,
-.mvr-mode .patch-row:not(.editing) .ant-btn{
+.mvr-mode .patch-row:not(.editing) .ant-select{
   pointer-events:none!important;
 }
 .mvr-mode .universe-panel{

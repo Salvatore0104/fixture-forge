@@ -88,7 +88,6 @@ function Workbench(){
   const [selectedPatchIds,setSelectedPatchIds]=useState<string[]>([]);
   const [patchSelectionAnchor,setPatchSelectionAnchor]=useState<string>();
  const [editingPatchId,setEditingPatchId]=useState<string>();
-  const [editingPatchName,setEditingPatchName]=useState('');
   const [modeEditorOpen,setModeEditorOpen]=useState(false);
   const [editingModeId,setEditingModeId]=useState<string>();
   const [editingModeName,setEditingModeName]=useState('');
@@ -119,6 +118,7 @@ function Workbench(){
   const mode=active?.modes.find(m=>m.id===modeId)||active?.modes[0];
   const channel=mode?.channels.find(c=>c.id===channelId);
   const selectedMvrItem=mvrItems.find(x=>x.id===selectedPatch);
+  const fixtureById=useMemo(()=>new Map(fixtures.map(f=>[f.id,f])),[fixtures]);
 
   const setPatchSelection=(ids:string[])=>{
     const unique=Array.from(new Set(ids)).filter(id=>mvrItems.some(item=>item.id===id));
@@ -334,7 +334,7 @@ function Workbench(){
   const shown=(mode?.channels||[]).filter(ch=>`${ch.address} ${ch.attribute} ${ch.name}`.toLowerCase().includes(query.toLowerCase()));
   const library=fixtures.filter(f=>`${f.name} ${f.manufacturer.name}`.toLowerCase().includes(libraryQuery.toLowerCase()));
 
-  const nextPatchAddress=(universe:number)=>Math.min(512,Math.max(1,...mvrItems.filter(x=>x.universe===universe).map(x=>x.address+fixtureFootprint(fixtures.find(f=>f.id===x.fixtureId),x.modeName))));
+  const nextPatchAddress=(universe:number)=>Math.min(512,Math.max(1,...mvrItems.filter(x=>x.universe===universe).map(x=>x.address+fixtureFootprint(fixtureById.get(x.fixtureId),x.modeName))));
   const prefixColor=(prefix:string)=>{
     const existing=mvrItems.find(item=>item.name.startsWith(`${prefix}_`));
     if(existing)return existing.color;
@@ -438,17 +438,29 @@ function Workbench(){
     if(!grid)return;
     const rect=grid.getBoundingClientRect();
     if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return;
-    const col=Math.max(0,Math.min(31,Math.floor((x-rect.left)/(rect.width/32))));
-    const row=Math.max(0,Math.min(15,Math.floor((y-rect.top)/25)));
+    const col=Math.max(0,Math.min(31,Math.floor((x-rect.left+grid.scrollLeft)/(grid.scrollWidth/32))));
+    const row=Math.max(0,Math.min(15,Math.floor((y-rect.top+grid.scrollTop)/25)));
     return row*32+col+1;
   };
 
-  const movePatchToPointer=(id:string,x:number,y:number)=>{
-    const address=addressFromPointer(x,y);
-    if(address!==undefined&&address>=1&&address<=512){
-      patchMvrItem(id,{universe:universeView,address});
-      setSelectedPatch(id);
-    }
+  const movePatchGroup=(ids:string[],targetUniverse:number,targetAddress:number)=>{
+    const draggedItem=mvrItems.find(x=>x.id===ids[ids.length-1]);
+    if(!draggedItem)return;
+    const delta=targetAddress-draggedItem.address;
+    const idSet=new Set(ids);
+    setMvrItems(items=>items.map(item=>{
+      if(!idSet.has(item.id))return item;
+      const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
+      const sameUniverse=item.universe===draggedItem.universe;
+      let universe=sameUniverse?targetUniverse:item.universe;
+      let address=Math.max(1,Math.min(512,item.address+delta));
+      if(address+footprint-1>512&&universe<256){
+        universe+=1;
+        address=1;
+      }
+      return {...item,universe,address};
+    }));
+    setSelectedPatch(ids[ids.length-1]);
   };
 
   const startPatchDrag=(id:string,e:React.PointerEvent<HTMLDivElement>)=>{
@@ -473,7 +485,7 @@ function Workbench(){
         const origin=origins.find(o=>o.id===item.id);
         if(!origin)return item;
         const newAddress=Math.max(1,Math.min(512,origin.address+delta));
-        const footprint=fixtureFootprint(fixtures.find(f=>f.id===item.fixtureId),item.modeName);
+        const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
         let universe=origin.universe;
         let finalAddress=newAddress;
         if(newAddress+footprint-1>512&&universe<256){
@@ -523,10 +535,11 @@ function Workbench(){
       selectMode(remaining[Math.min(idx,remaining.length-1)]?.id||'');
     }
   };
-  const renameMode=()=>{
-    if(!active||!editingModeName.trim())return;
-    patch(f=>{const m=f.modes.find(x=>x.id===editingModeId);if(m)m.name=editingModeName.trim()});
-    setModeEditorOpen(false);
+  const renameMode=(id=editingModeId)=>{
+    const name=editingModeName.trim();
+    if(!active||!id||!name)return;
+    patch(f=>{const m=f.modes.find(x=>x.id===id);if(m)m.name=name});
+    selectMode(id);
   };
 
   const openMvrImport=async(file:File)=>{
@@ -574,7 +587,7 @@ function Workbench(){
   };
 
   const universeBars=useMemo(()=>mvrItems.filter(item=>item.universe===universeView).flatMap(item=>{
-    const footprint=Math.max(1,fixtureFootprint(fixtures.find(f=>f.id===item.fixtureId),item.modeName));
+    const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
     const end=Math.min(512,item.address+footprint-1);
     const segments:{item:MvrItem;row:number;col:number;span:number;start:number;end:number}[]=[];
     for(let ch=item.address;ch<=end;){
@@ -585,16 +598,16 @@ function Workbench(){
       ch=rowEnd+1;
     }
     return segments;
-  }),[mvrItems,fixtures,universeView]);
+  }),[mvrItems,fixtureById,universeView]);
   const occupiedUniverseChannels=useMemo(()=>{
     const used=new Set<number>();
     mvrItems.filter(item=>item.universe===universeView).forEach(item=>{
-      const footprint=Math.max(1,fixtureFootprint(fixtures.find(f=>f.id===item.fixtureId),item.modeName));
+      const footprint=Math.max(1,fixtureFootprint(fixtureById.get(item.fixtureId),item.modeName));
       const end=Math.min(512,item.address+footprint-1);
       for(let ch=item.address;ch<=end;ch++)used.add(ch);
     });
     return used;
-  },[mvrItems,fixtures,universeView]);
+  },[mvrItems,fixtureById,universeView]);
 
   if(!catalog)return <div className="loading">正在加载灯具工作台…</div>;
 
@@ -661,14 +674,14 @@ function Workbench(){
             <div className="patch-table">
               <div className="patch-row header"><span>灯具配接</span><span>FID</span><span>灯具类型</span><span>模式</span><span>配接</span><span></span></div>
               {mvrItems.map(item=>{
-                const f=fixtures.find(x=>x.id===item.fixtureId);
+                const f=fixtureById.get(item.fixtureId);
                 if(!f)return null;
                 const editing=editingPatchId===item.id;
                 return <div key={item.id} className={`patch-row ${selectedPatchIds.includes(item.id)?'selected':''} ${editing?'editing':''}`} onClick={e=>selectPatchRow(item.id,e)} onDoubleClick={e=>{e.stopPropagation();setPatchSelection([item.id]);setPatchSelectionAnchor(item.id);setEditingPatchId(item.id);setSelectedPatch(item.id);setUniverseView(item.universe)}}>
-                  <Input disabled={!editing} value={item.name} onChange={e=>patchMvrItem(item.id,{name:e.target.value})}/>
-                  <InputNumber disabled={!editing} min={1} value={item.fid} onChange={v=>patchMvrItem(item.id,{fid:v||1})}/>
-                  <Select disabled={!editing} value={item.fixtureId} onChange={v=>{const nf=fixtures.find(x=>x.id===v)!;patchMvrItem(item.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'})}} options={fixtures.map(x=>({value:x.id,label:x.name}))}/>
-                  <Select disabled={!editing} value={item.modeName} onChange={v=>patchMvrItem(item.id,{modeName:v})} options={f.modes.map(m=>({value:m.name,label:m.name}))}/>
+                  {editing?<Input autoFocus value={item.name} onChange={e=>patchMvrItem(item.id,{name:e.target.value})}/>:<span className="patch-cell-name">{item.name}</span>}
+                  {editing?<InputNumber min={1} value={item.fid} onChange={v=>patchMvrItem(item.id,{fid:v||1})}/>:<span>{item.fid}</span>}
+                  {editing?<Select value={item.fixtureId} onChange={v=>{const nf=fixtureById.get(v)!;patchMvrItem(item.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'})}} options={fixtures.map(x=>({value:x.id,label:x.name}))}/>:<span className="patch-cell-name">{f.name}</span>}
+                  {editing?<Select value={item.modeName} onChange={v=>patchMvrItem(item.id,{modeName:v})} options={f.modes.map(m=>({value:m.name,label:m.name}))}/>:<span>{item.modeName}</span>}
                   <span>{item.universe}.{item.address}</span>
                   <Button danger type="text" icon={<DeleteOutlined/>} onClick={e=>{e.stopPropagation();deleteMvrItems(selectedPatchIds.includes(item.id)?selectedPatchIds:[item.id])}}/>
                 </div>;
@@ -679,7 +692,7 @@ function Workbench(){
          <div className="universe-panel">
             <div className="universe-head"><span>本地 Universe</span><Button size="small" disabled={universeView<=1} onClick={()=>setUniverseView(Math.max(1,universeView-1))}>上一域</Button><InputNumber min={1} max={256} value={universeView} onChange={v=>setUniverseView(Math.max(1,Math.min(256,v||1)))}/><span>/ 256</span><Button size="small" disabled={universeView>=256} onClick={()=>setUniverseView(Math.min(256,universeView+1))}>下一域</Button><Checkbox>只显示冲突</Checkbox><Checkbox>显示所有带配接的域</Checkbox></div>
             <div ref={universeGridRef} className="universe-grid">
-              {Array.from({length:512},(_,i)=>i+1).map(ch=><div key={ch} data-channel={ch} className={`universe-cell ${occupiedUniverseChannels.has(ch)?'occupied':''}`} title={`CH ${ch}`} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/patch-id');if(id){patchMvrItem(id,{universe:universeView,address:ch});setSelectedPatch(id)}}}><span>{ch}</span></div>)}
+              {Array.from({length:512},(_,i)=>i+1).map(ch=><div key={ch} data-channel={ch} className={`universe-cell ${occupiedUniverseChannels.has(ch)?'occupied':''}`} title={`CH ${ch}`} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move'}} onDrop={e=>{e.preventDefault();e.stopPropagation();const id=e.dataTransfer.getData('text/patch-id');if(id){const ids=selectedPatchIds.includes(id)?selectedPatchIds:[id];movePatchGroup(ids,universeView,ch)}}}><span>{ch}</span></div>)}
               {universeBars.map(seg=><div key={`${seg.item.id}-${seg.start}`} className={`universe-bar ${selectedPatchIds.includes(seg.item.id)?'selected':''}`} style={{left:`calc(${seg.col-1} * 100% / 32)`,top:`calc(${seg.row-1} * var(--dmx-cell-h))`,width:`calc(${seg.span} * 100% / 32)`,backgroundColor:seg.item.color}} title={`${seg.item.name} · ${seg.start}-${seg.end}`} onClick={e=>{e.stopPropagation();selectPatchRow(seg.item.id,e)}} onPointerDown={e=>startPatchDrag(seg.item.id,e)}><b>{seg.start===seg.item.address?seg.item.name:''}</b></div>)}
             </div>
           </div>
@@ -688,7 +701,7 @@ function Workbench(){
       <aside className="mvr-inspector">
         <div className="panel-title"><span>配接详情</span><SettingOutlined/></div>
         {selectedMvrItem?(()=>{
-          const f=fixtures.find(x=>x.id===selectedMvrItem.fixtureId);
+          const f=fixtureById.get(selectedMvrItem.fixtureId);
           if(!f)return <Empty description="灯具类型不存在"/>;
           return <>
             <div className="selected-name">{selectedMvrItem.name}</div>
@@ -748,9 +761,9 @@ function Workbench(){
    </Modal>
     <Modal width={460} title="灯具模式管理" open={modeEditorOpen} onCancel={()=>setModeEditorOpen(false)} footer={<Button onClick={()=>setModeEditorOpen(false)}>关闭</Button>}>
       <div className="mode-editor">{active?.modes.map(m=><div key={m.id} className={`mode-row ${m.id===editingModeId?'active':''}`} onClick={()=>{setEditingModeId(m.id);setEditingModeName(m.name)}}>
-        <Input value={editingModeId===m.id?editingModeName:m.name} onChange={e=>setEditingModeName(e.target.value)} onPressEnter={renameMode}/>
+        <Input value={editingModeId===m.id?editingModeName:m.name} onFocus={()=>{setEditingModeId(m.id);setEditingModeName(m.name)}} onChange={e=>{setEditingModeId(m.id);setEditingModeName(e.target.value)}} onPressEnter={()=>renameMode(m.id)}/>
         <Tag color="blue">{modeFootprint(m)} CH</Tag>
-        <Button size="small" type={editingModeId===m.id?'primary':'default'} onClick={renameMode}>重命名</Button>
+        <Button size="small" type={editingModeId===m.id?'primary':'default'} onClick={e=>{e.stopPropagation();renameMode(m.id)}}>重命名</Button>
         <Popconfirm title={`删除模式「${m.name}」?`} description="此操作无法撤销" onConfirm={()=>removeMode(m.id)}><Button size="small" danger icon={<DeleteOutlined/>} disabled={active.modes.length<=1}/></Popconfirm>
       </div>)}<Button type="dashed" block icon={<PlusOutlined/>} onClick={addMode} style={{marginTop:8}}>添加模式</Button></div>
     </Modal>

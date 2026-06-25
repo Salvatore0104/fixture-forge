@@ -157,16 +157,6 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
     root=etree.Element('GeneralSceneDescription',verMajor='1',verMinor='5')
     user=etree.SubElement(root,'UserData'); data=etree.SubElement(user,'Data',provider='FixtureForge',ver='1.0'); etree.SubElement(data,'CreationDate').text=datetime.now().strftime('%Y.%m.%d-%H.%M.%S')
     scene=etree.SubElement(root,'Scene')
-    # Declare all unique universes used in this scene (required by UE 5.7+)
-    universe_set=set()
-    for uni_item in items:
-        uni_item_u=max(1,min(256,int(uni_item.get('universe') or 1)))
-        universe_set.add(uni_item_u)
-    universes_el=etree.SubElement(scene,'Universes')
-    for uni_num in sorted(universe_set):
-        uni_el=etree.SubElement(universes_el,'Universe')
-        etree.SubElement(uni_el,'UniverseNumber').text=str(uni_num)
-        etree.SubElement(uni_el,'Name').text=f'Universe {uni_num}'
     layers=etree.SubElement(scene,'Layers'); layer=etree.SubElement(layers,'Layer',uuid=str(uuid.uuid5(uuid.NAMESPACE_DNS,scene_name+'-layer')).upper()); children=etree.SubElement(layer,'ChildList')
     gdtf_files={}
     for index,item in enumerate(items,start=1):
@@ -185,9 +175,11 @@ def export_mvr_scene(fixtures: dict[str, FixtureDocument], scene_name: str, item
         mode_name=item.get('modeName')
         mode=next((m for m in fixture_doc.modes if m.name==mode_name),fixture_doc.modes[0]) if fixture_doc.modes else None
         footprint=max((ch.address+ch.resolution//8-1 for ch in (mode.channels if mode else [])),default=1)
-        address=etree.SubElement(addresses,'Address',attrib={'Break':str(footprint),'Universe':str(max(1,min(256,int(item.get('universe') or 1))))})
-        address.text=str(max(1,min(512,int(item.get('address') or 1))))
-    xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True).replace(b'break_=',b'Break=')
+        universe=max(1,min(256,int(item.get('universe') or 1)))
+        dmx_address=max(1,min(512,int(item.get('address') or 1)))
+        address=etree.SubElement(addresses,'Address',attrib={'break':'0'})
+        address.text=f'{universe}.{dmx_address}'
+    xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True)
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('MVR/GeneralSceneDescription.xml',xml)
