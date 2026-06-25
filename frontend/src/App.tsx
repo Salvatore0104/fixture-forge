@@ -520,8 +520,8 @@ function Workbench(){
   const patchPositionFromPointer=(x:number,y:number)=>{
     const target=document.elementFromPoint(x,y) as HTMLElement|null;
     const section=target?.closest<HTMLElement>('[data-universe]');
-    const grid=(section?.querySelector('.universe-grid') as HTMLDivElement|null)||universeGridRef.current;
-    if(!grid)return;
+    const grid=section?.querySelector('.universe-grid') as HTMLDivElement|null;
+    if(!grid||!section)return;
     const rect=grid.getBoundingClientRect();
     if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return;
     const col=Math.max(0,Math.min(31,Math.floor((x-rect.left)/(grid.clientWidth/32))));
@@ -604,10 +604,16 @@ function Workbench(){
     setPatchSelection(draggedIds);
     setPatchSelectionAnchor(draggedIds[0]);
     setSelectedPatch(draggedIds[0]);
+    const dragItem=mvrItems.find(x=>x.id===id);
+    // Calculate offset: item first channel - grid cell under cursor at press time
+    const initPos=patchPositionFromPointer(e.clientX,e.clientY);
+    const itemAddr=(dragItem?.address||1);
+    const offset=initPos?(itemAddr-initPos.address):0;
     const move=(ev:PointerEvent)=>{
       const pos=patchPositionFromPointer(ev.clientX,ev.clientY);
       if(!pos)return;
-      movePatchGroup(draggedIds,pos.universe,pos.address,id);
+      const addr=Math.max(1,Math.min(512,pos.address+offset));
+      movePatchGroup(draggedIds,pos.universe,addr,id);
     };
     const up=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)};
     window.addEventListener('pointermove',move);
