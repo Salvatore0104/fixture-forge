@@ -65,25 +65,28 @@ def patch_item():
     return {"fixtureId": "fixture-1", "fid": 7, "modeName": "Basic", "universe": 2, "address": 33, "name": "Wash_0007"}
 
 
-def test_push_ma2_local_imports_fixturetype_and_layer(monkeypatch, tmp_path):
-    sent = []
-    feedback = [
+def overwrite_feedback():
+    return [
         b"banner\r\n",
         b"Logged in as User 'administrator'\r\n",
         b"Executing : ChangeDest /\r\n",
         b"Executing : ChangeDest EditSetup\r\n",
         b"Executing : ChangeDest FixtureTypes\r\n",
+        b"WARNING, NO OBJECTS FOUND FOR LIST\r\n",
         b'1 object(s) from "Manu_Wash_Basic.xml" imported.\r\n',
         b"FixtureType 16 16   Wash                  Wash                  Manu\r\n",
         b"Executing : ChangeDest /\r\n",
-        b"Executing : ChangeDest Root\r\n",
-        b"WARNING, NO OBJECTS FOUND FOR LIST\r\n",
         b"Executing : ChangeDest EditSetup\r\n",
         b"Executing : ChangeDest Layers\r\n",
-        b'1 object(s) from "Scene_layer.xml" imported.\r\n',
+        b"WARNING, NO OBJECTS FOUND FOR LIST\r\n",
+        b'1 object(s) from "Scene_Universe_002.xml" imported.\r\n',
         b"Executing : ChangeDest Root\r\n",
     ]
-    monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, feedback))
+
+
+def test_push_ma2_local_replaces_fixturetype_and_overwrites_universe_layer(monkeypatch, tmp_path):
+    sent = []
+    monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, overwrite_feedback()))
     monkeypatch.setattr("app.formats.time.sleep", lambda delay: None)
     monkeypatch.setattr("app.formats._ma2_data_dir", lambda kind: str(tmp_path))
 
@@ -97,13 +100,14 @@ def test_push_ma2_local_imports_fixturetype_and_layer(monkeypatch, tmp_path):
 
     assert result["success"] is True
     assert sent[0] == 'Login "administrator" "admin"'
-    assert any(command.startswith('Import "') for command in sent)
-    assert "CD Layers" in sent
-    assert 'Import "Scene_layer.xml"' in sent
+    assert 'Delete FixtureType "Wash"' in sent
+    assert 'Import "Manu_Wash_Basic.xml"' in sent
+    assert 'Delete Layer "Scene_Universe_002"' in sent
+    assert 'Import "Scene_Universe_002.xml"' in sent
     assert "Assign Fixture 7 At DMX 2.33" not in sent
 
 
-def test_push_ma2_remote_skips_local_import_and_warns(monkeypatch):
+def test_push_ma2_remote_requires_local_onpc_for_overwrite(monkeypatch):
     sent = []
     monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent))
     monkeypatch.setattr("app.formats.time.sleep", lambda delay: None)
@@ -117,10 +121,10 @@ def test_push_ma2_remote_skips_local_import_and_warns(monkeypatch):
         password="admin",
     )
 
-    assert result["success"] is True
-    assert not any(command.startswith('Import "') for command in sent)
-    assert result["warnings"]
-    assert "Assign Fixture 7 At DMX 2.33" in sent
+    assert result["success"] is False
+    assert not any(command.startswith("Import ") for command in sent)
+    assert not any(command.startswith("Assign Fixture ") for command in sent)
+    assert any("same computer" in error for error in result["errors"])
 
 
 def test_push_ma2_stops_after_editsetup_rejected(monkeypatch, tmp_path):
@@ -150,25 +154,9 @@ def test_push_ma2_stops_after_editsetup_rejected(monkeypatch, tmp_path):
     assert any("EditSetup" in warning for warning in result["warnings"])
 
 
-def test_push_ma2_returns_to_root_before_layer_import(monkeypatch, tmp_path):
+def test_push_ma2_imports_layer_after_returning_to_layers_root(monkeypatch, tmp_path):
     sent = []
-    feedback = [
-        b"banner\r\n",
-        b"Logged in as User 'administrator'\r\n",
-        b"Executing : ChangeDest /\r\n",
-        b"Executing : ChangeDest EditSetup\r\n",
-        b"Executing : ChangeDest FixtureTypes\r\n",
-        b'1 object(s) from "Manu_Wash_Basic.xml" imported.\r\n',
-        b"FixtureType 16 16   Wash                  Wash                  Manu\r\n",
-        b"Executing : ChangeDest /\r\n",
-        b"Executing : ChangeDest Root\r\n",
-        b"WARNING, NO OBJECTS FOUND FOR LIST\r\n",
-        b"Executing : ChangeDest EditSetup\r\n",
-        b"Executing : ChangeDest Layers\r\n",
-        b'1 object(s) from "Scene_layer.xml" imported.\r\n',
-        b"Executing : ChangeDest Root\r\n",
-    ]
-    monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, feedback))
+    monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, overwrite_feedback()))
     monkeypatch.setattr("app.formats.time.sleep", lambda delay: None)
     monkeypatch.setattr("app.formats._ma2_data_dir", lambda kind: str(tmp_path))
 
@@ -184,19 +172,15 @@ def test_push_ma2_returns_to_root_before_layer_import(monkeypatch, tmp_path):
     import_index = sent.index('Import "Manu_Wash_Basic.xml"')
     assert sent[import_index + 1] == "List"
     assert sent[import_index + 2] == "CD /"
-    assert sent[import_index + 3] == "CD Root"
-    assert sent[import_index + 4] == "List Fixture 7"
-    assert "CD Layers" in sent
+    assert sent[import_index + 3] == "CD EditSetup"
+    assert sent[import_index + 4] == "CD Layers"
 
 
-def test_push_ma2_errors_without_fixturetype_numbers_for_layer(monkeypatch):
+def test_push_ma2_requires_fixturetype_import_for_overwrite(monkeypatch):
     sent = []
     feedback = [
         b"banner\r\n",
         b"Logged in as User 'administrator'\r\n",
-        b"Executing : ChangeDest /\r\n",
-        b"Executing : ChangeDest Root\r\n",
-        b"WARNING, NO OBJECTS FOUND FOR LIST\r\n",
     ]
     monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, feedback))
     monkeypatch.setattr("app.formats.time.sleep", lambda delay: None)
@@ -212,4 +196,4 @@ def test_push_ma2_errors_without_fixturetype_numbers_for_layer(monkeypatch):
 
     assert result["success"] is False
     assert "Assign Fixture 7 At DMX 2.33" not in sent
-    assert any("FixtureType number" in error for error in result["errors"])
+    assert any("FixtureType import is required" in error for error in result["errors"])

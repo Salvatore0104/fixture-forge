@@ -8,7 +8,18 @@ import {useStore} from './store';
 import {compactModeAddresses,modeFootprint,removeChannelAndCompact} from './model';
 import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,Ma2Device,MvrImportOption,MvrItem,PushResult,Resolution} from './types';
 
-const uid=()=>crypto.randomUUID();
+const uid=()=>{
+  if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
+  if(globalThis.crypto?.getRandomValues){
+    const bytes=new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    bytes[6]=(bytes[6]&0x0f)|0x40;
+    bytes[8]=(bytes[8]&0x3f)|0x80;
+    const hex=[...bytes].map(x=>x.toString(16).padStart(2,'0'));
+    return `${hex.slice(0,4).join('')}-${hex.slice(4,6).join('')}-${hex.slice(6,8).join('')}-${hex.slice(8,10).join('')}-${hex.slice(10).join('')}`;
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
+};
 const patchColors=['#18d5e8','#75e900','#2820bb','#ffb000','#d44aff','#ff4d4f','#00b578','#4096ff'];
 const UNIVERSE_COUNT=256;
 const UNIVERSE_SECTION_HEIGHT=568;
@@ -105,7 +116,6 @@ function Workbench(){
   const [ma2Port,setMa2Port]=useState(30000);
   const [ma2Username,setMa2Username]=useState('administrator');
   const [ma2Password,setMa2Password]=useState('admin');
-  const [ma2Options,setMa2Options]=useState({importFixtureTypes:true,patchFixtures:true,labelFixtures:true});
   const [ma2Scanning,setMa2Scanning]=useState(false);
   const [ma2Testing,setMa2Testing]=useState(false);
   const [ma2Importing,setMa2Importing]=useState(false);
@@ -728,7 +738,7 @@ function Workbench(){
     setMa2Result(undefined);
     setMa2LogOpen(false);
     try{
-      const result=await api.pushToMa2({sceneName,items:testOnly?[]:mvrItems,ma2Ip:ma2Selected,ma2Port,username:ma2Username,password:ma2Password,options:{...ma2Options,testOnly}});
+      const result=await api.pushToMa2({sceneName,items:testOnly?[]:mvrItems,ma2Ip:ma2Selected,ma2Port,username:ma2Username,password:ma2Password,options:{importFixtureTypes:true,patchFixtures:true,testOnly}});
       setMa2Result(result);
       if(testOnly&&result.success)message.success('TCP 30000 已连通，MA2 登录成功');
       else if(testOnly)message.error(result.errors?.[0]||'MA2 登录失败');
@@ -996,15 +1006,10 @@ function Workbench(){
               <label>MA2 用户名<Input value={ma2Username} onChange={e=>setMa2Username(e.target.value)}/></label>
               <label>MA2 密码<Input.Password value={ma2Password} onChange={e=>setMa2Password(e.target.value)} placeholder="默认 administrator/admin"/></label>
             </div>
-            <div className="ma2-option-list">
-              <Checkbox checked={ma2Options.importFixtureTypes} onChange={e=>setMa2Options({...ma2Options,importFixtureTypes:e.target.checked})}>导入 Fixture Type（本机尝试）</Checkbox>
-              <Checkbox checked={ma2Options.patchFixtures} onChange={e=>setMa2Options({...ma2Options,patchFixtures:e.target.checked})}>创建/同步 Layer 和 Patch</Checkbox>
-              <Checkbox checked={ma2Options.labelFixtures} onChange={e=>setMa2Options({...ma2Options,labelFixtures:e.target.checked})}>写入 Fixture 名称</Checkbox>
-            </div>
             <div className="ma2-settings-help">
-              <b>同步策略</b>
-              <span>新增 Fixture ID 会通过 Layer XML 创建；已存在 Fixture 只更新 Patch/名称。</span>
-              <span>删除规划不会自动删除 MA2 灯具，避免已有 cue 因 Fixture ID 消失而失效。</span>
+              <b>覆盖策略</b>
+              <span>网页中的 Fixture Type 和 Universe 配接规划是最终版本。</span>
+              <span>导入时会替换同名 Fixture Type，并覆盖目标 Universe Layer；不存在的 Universe Layer 会新建。</span>
               <span>Error #22 表示 EditSetup 被占用；关闭 Patch/Fixture Schedule 或重启 onPC 后再试。</span>
             </div>
           </section>

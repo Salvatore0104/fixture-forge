@@ -264,8 +264,37 @@ def _ma2_data_dir(kind: str) -> str | None:
     return None
 
 
-def export_ma2_layer(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict], fixture_type_numbers: dict[str, int]):
-    safe_scene=safe_name(scene_name or 'FixtureForge_Layer')
+def _ma2_local_addresses() -> set[str]:
+    addresses={'127.0.0.1','localhost','::1'}
+    try:
+        hostname=socket.gethostname()
+        addresses.add(socket.gethostbyname(hostname))
+        for value in socket.gethostbyname_ex(hostname)[2]:
+            addresses.add(value)
+    except OSError:
+        pass
+    return addresses
+
+
+def _ma2_is_local_target(ma2_ip: str) -> bool:
+    return str(ma2_ip).strip().lower() in _ma2_local_addresses()
+
+
+def _ma2_layer_name(scene_name: str, universe: int) -> str:
+    prefix=safe_name(scene_name or 'FixtureForge')
+    return f'{prefix}_Universe_{max(1,min(256,int(universe))):03d}'[:31]
+
+
+def _ma2_group_items_by_universe(items: list[dict]) -> dict[int, list[dict]]:
+    grouped: dict[int, list[dict]]={}
+    for item in items:
+        universe=max(1,min(256,int(item.get('universe') or 1)))
+        grouped.setdefault(universe,[]).append(item)
+    return grouped
+
+
+def export_ma2_layer(fixtures: dict[str, FixtureDocument], scene_name: str, items: list[dict], fixture_type_numbers: dict[str, int], layer_name: str | None = None):
+    safe_scene=safe_name(layer_name or scene_name or 'FixtureForge_Layer')
     root=etree.Element(f"{{{MA_NS}}}MA",nsmap={None:MA_NS,"xsi":"http://www.w3.org/2001/XMLSchema-instance"},major_vers='3',minor_vers='7',stream_vers='0')
     etree.SubElement(root,f"{{{MA_NS}}}Info",datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),showfile='FixtureForge')
     layer=etree.SubElement(root,f"{{{MA_NS}}}Layer",index='0',name=safe_scene[:31] or 'FixtureForge')
@@ -332,7 +361,6 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
     test_only=bool(options.get('testOnly'))
     import_types=bool(options.get('importFixtureTypes', True))
     patch_fixtures=bool(options.get('patchFixtures', True))
-    label_fixtures=bool(options.get('labelFixtures', True))
     errors=[]
     warnings=[]
     sent_commands=[]
@@ -340,139 +368,99 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
     temp_path=None
     cleanup_files=[]
     fixture_type_numbers={}
-    layer_file=None
-    is_local=ma2_ip in {'127.0.0.1','localhost','::1'}
+    is_local=_ma2_is_local_target(ma2_ip)
+
+    def send_command(sock, command: str, wait=0.2, ignore_missing=False) -> bool:
+        sock.sendall((command+'\r\n').encode('utf-8'))
+        sent_commands.append(command)
+        feedback=_ma2_read_feedback(sock, wait=wait)
+        feedback_log.append({'command':command,'feedback':feedback})
+        command_errors=_ma2_feedback_errors(feedback)
+        if ignore_missing:
+            command_errors=[err for err in command_errors if 'NO OBJECTS FOUND' not in err.upper()]
+        errors.extend(command_errors)
+        command_warnings=_ma2_feedback_warnings(feedback)
+        if ignore_missing:
+            command_warnings=[w for w in command_warnings if 'could not find' not in w.lower()]
+        warnings.extend(w for w in command_warnings if w not in warnings)
+        return not command_errors
+
     try:
         with socket.create_connection((ma2_ip, int(ma2_port or 30000)), timeout=3) as sock:
             sock.settimeout(0.35)
             _ma2_read_feedback(sock, wait=0.35)
             login=f'Login "{_ma2_quote(username)}" "{_ma2_quote(password)}"' if username or password else None
             if login:
-                sock.sendall((login+'\r\n').encode('utf-8'))
-                sent_commands.append(login)
-                feedback=_ma2_read_feedback(sock)
-                feedback_log.append({'command':login,'feedback':feedback})
-                errors.extend(_ma2_feedback_errors(feedback))
+                send_command(sock, login)
                 if errors:
                     return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
             if test_only:
                 return {'success':True,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
             if not items:
                 raise ValueError('MA2 push requires at least one fixture item')
-            import_paths=None
-            if import_types and is_local:
-                import_dir=_ma2_data_dir('library')
-                if import_dir:
-                    temp_path=import_dir
-                else:
-                    temp_path=tempfile.mkdtemp(prefix='fixture-forge-ma2-import-')
-                    warnings.append('MA2 library directory was not found; Import may not be able to read the temporary XML file.')
-                _, fixture_files, _, _=_ma2_patch_assets(fixtures, scene_name, items)
-                import_paths={}
-                for fixture_file,xml in fixture_files.items():
-                    path=os.path.join(temp_path, fixture_file+'.xml')
-                    with open(path,'wb') as handle:
-                        handle.write(xml)
-                    cleanup_files.append(path)
-                    import_paths[fixture_file]=fixture_file+'.xml' if import_dir else path
-            elif import_types and not is_local:
-                warnings.append('Remote MA2 cannot read local Fixture Forge XML files; skipped automatic FixtureType import. Use the MA2 patch package fallback.')
-            _, fixture_files, commands, _=_ma2_patch_assets(fixtures, scene_name, items, include_imports=bool(import_paths), import_paths=import_paths)
-            filtered=[]
-            for command in commands:
-                if command.startswith('Import ') and not import_types:
-                    continue
-                if command.startswith('Assign Fixture ') and (not patch_fixtures or is_local):
-                    continue
-                if command.startswith('Label Fixture ') and (not label_fixtures or is_local):
-                    continue
-                filtered.append(command)
-            for command in filtered:
-                sock.sendall((command+'\r\n').encode('utf-8'))
-                sent_commands.append(command)
-                feedback=_ma2_read_feedback(sock)
-                feedback_log.append({'command':command,'feedback':feedback})
-                command_errors=_ma2_feedback_errors(feedback)
-                errors.extend(command_errors)
-                warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
-                if command_errors:
-                    break
-                if command.startswith('Import ') and import_types and is_local:
-                    sock.sendall(('List\r\n').encode('utf-8'))
-                    sent_commands.append('List')
-                    feedback=_ma2_read_feedback(sock, wait=0.35)
-                    feedback_log.append({'command':'List','feedback':feedback})
-                    wanted={doc.name for doc in fixtures.values()}
-                    fixture_type_numbers.update(_parse_fixturetype_numbers(feedback,wanted))
-            if not errors and is_local and (patch_fixtures or label_fixtures):
-                existing_items=[]
-                missing_items=[]
-                for item in items:
-                    fid=max(1,int(item.get('fid') or len(existing_items)+len(missing_items)+1))
-                    probe=f'List Fixture {fid}'
-                    sock.sendall((probe+'\r\n').encode('utf-8'))
-                    sent_commands.append(probe)
-                    feedback=_ma2_read_feedback(sock)
-                    feedback_log.append({'command':probe,'feedback':feedback})
-                    if 'NO OBJECTS FOUND' in feedback.upper():
-                        missing_items.append(item)
-                        continue
-                    command_errors=_ma2_feedback_errors(feedback)
-                    errors.extend(command_errors)
-                    warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
-                    if command_errors:
+            if not is_local:
+                errors.append('Automatic MA2 overwrite requires Fixture Forge to run on the same computer as grandMA2 onPC. Use the MA2 patch package for remote consoles.')
+                return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+            if patch_fixtures and not import_types:
+                errors.append('FixtureType import is required because the web page is the source of truth for one-click MA2 overwrite.')
+                return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+
+            import_dir=_ma2_data_dir('library')
+            layer_dir=_ma2_data_dir('importexport')
+            if import_types and not import_dir:
+                errors.append('MA2 library directory was not found; cannot import current web FixtureType XML automatically.')
+            if patch_fixtures and not layer_dir:
+                errors.append('MA2 importexport directory was not found; cannot import current web Layer XML automatically.')
+            if errors:
+                return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+
+            temp_path=import_dir
+            _, fixture_files, _, _=_ma2_patch_assets(fixtures, scene_name, items)
+            import_paths={}
+            for fixture_file,xml in fixture_files.items():
+                path=os.path.join(import_dir, fixture_file+'.xml')
+                with open(path,'wb') as handle:
+                    handle.write(xml)
+                cleanup_files.append(path)
+                import_paths[fixture_file]=fixture_file+'.xml'
+
+            wanted={doc.name for doc in fixtures.values()}
+            if import_types:
+                for command in ['CD /','CD EditSetup','CD FixtureTypes']:
+                    if not send_command(sock, command):
                         break
-                    existing_items.append(item)
                 if not errors:
-                    if existing_items:
-                        warnings.append('Existing MA2 fixtures were updated in place; FixtureType replacement and deletion are skipped to protect cues.')
-                    for item in existing_items:
-                        fid=max(1,int(item.get('fid') or 1))
-                        universe=max(1,min(256,int(item.get('universe') or 1)))
-                        address=max(1,min(512,int(item.get('address') or 1)))
-                        name=str(item.get('name') or f'Fixture_{fid:04d}')
-                        update_commands=[]
-                        if patch_fixtures:
-                            update_commands.append(f'Assign Fixture {fid} At DMX {universe}.{address}')
-                        if label_fixtures:
-                            update_commands.append(f'Label Fixture {fid} "{_ma2_quote(name)}"')
-                        for command in update_commands:
-                            sock.sendall((command+'\r\n').encode('utf-8'))
-                            sent_commands.append(command)
-                            feedback=_ma2_read_feedback(sock)
-                            feedback_log.append({'command':command,'feedback':feedback})
-                            command_errors=_ma2_feedback_errors(feedback)
-                            errors.extend(command_errors)
-                            warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
-                            if command_errors:
-                                break
-                        if errors:
+                    for name in sorted(wanted):
+                        if not send_command(sock, f'Delete FixtureType "{_ma2_quote(name)}"', ignore_missing=True):
                             break
-                if not errors and missing_items:
-                    missing=[fixtures[item['fixtureId']].name for item in missing_items if fixtures[item['fixtureId']].name not in fixture_type_numbers]
-                    if missing:
-                        errors.append('Unable to resolve MA2 FixtureType number(s): '+', '.join(missing))
-                    else:
-                        layer_dir=_ma2_data_dir('importexport')
-                        if not layer_dir:
-                            errors.append('MA2 importexport directory was not found; cannot import Layer XML automatically.')
-                        else:
-                            layer_file=safe_name(scene_name or 'FixtureForge')+'_layer.xml'
-                            layer_path=os.path.join(layer_dir, layer_file)
-                            with open(layer_path,'wb') as handle:
-                                handle.write(export_ma2_layer(fixtures, scene_name, missing_items, fixture_type_numbers))
-                            cleanup_files.append(layer_path)
-                            warnings.append(f'Added {len(missing_items)} new MA2 fixture(s). Old MA2 fixtures not present in this plan were kept to protect cues.')
-                            for command in ['CD /','CD EditSetup','CD Layers',f'Import "{_ma2_quote(layer_file)}"','CD Root']:
-                                sock.sendall((command+'\r\n').encode('utf-8'))
-                                sent_commands.append(command)
-                                feedback=_ma2_read_feedback(sock)
-                                feedback_log.append({'command':command,'feedback':feedback})
-                                command_errors=_ma2_feedback_errors(feedback)
-                                errors.extend(command_errors)
-                                warnings.extend(w for w in _ma2_feedback_warnings(feedback) if w not in warnings)
-                                if command_errors:
-                                    break
+                    for fixture_file in fixture_files:
+                        if not send_command(sock, f'Import "{_ma2_quote(import_paths[fixture_file])}"'):
+                            break
+                        if not send_command(sock, 'List', wait=0.35):
+                            break
+                        fixture_type_numbers.update(_parse_fixturetype_numbers(feedback_log[-1]['feedback'], wanted))
+                missing=[name for name in wanted if name not in fixture_type_numbers]
+                if not errors and missing:
+                    errors.append('Unable to resolve MA2 FixtureType number(s): '+', '.join(missing))
+
+            layer_files=[]
+            if not errors and patch_fixtures:
+                for universe, universe_items in sorted(_ma2_group_items_by_universe(items).items()):
+                    layer_name=_ma2_layer_name(scene_name, universe)
+                    layer_file=safe_name(layer_name)+'.xml'
+                    layer_path=os.path.join(layer_dir, layer_file)
+                    with open(layer_path,'wb') as handle:
+                        handle.write(export_ma2_layer(fixtures, scene_name, universe_items, fixture_type_numbers, layer_name=layer_name))
+                    cleanup_files.append(layer_path)
+                    layer_files.append(layer_file)
+                    for command in ['CD /','CD EditSetup','CD Layers',f'Delete Layer "{_ma2_quote(layer_name)}"',f'Import "{_ma2_quote(layer_file)}"']:
+                        if not send_command(sock, command, ignore_missing=command.startswith('Delete Layer ')):
+                            break
+                    if errors:
+                        break
+                if not errors:
+                    warnings.append('MA2 Layer overwrite complete. Fixture Forge web data replaced existing target Universe Layer(s).')
+                    send_command(sock, 'CD Root')
             return {'success':not errors,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[name+'.xml' for name in fixture_files],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
     except Exception as exc:
         errors.append(str(exc))

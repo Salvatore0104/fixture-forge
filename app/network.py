@@ -51,6 +51,21 @@ def _tcp_open(ip: str, port: int, timeout: float) -> bool:
         return False
 
 
+def _ma2_telnet_signature(ip: str, timeout: float) -> bool:
+    try:
+        with socket.create_connection((ip, 30000), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            try:
+                data = sock.recv(2048)
+            except (OSError, TimeoutError):
+                sock.sendall(b"\r\n")
+                data = sock.recv(2048)
+        text = data.lower()
+        return any(token in text for token in (b"grandma", b"ma lighting", b"malighting", b"commandline", b"login"))
+    except OSError:
+        return False
+
+
 def _http_ma_signature(ip: str, timeout: float) -> bool:
     try:
         with socket.create_connection((ip, 80), timeout=timeout) as sock:
@@ -72,13 +87,13 @@ def _hostname(ip: str) -> str:
 def _probe_host(ip: str, timeout: float, local_ip: str) -> dict | None:
     detected_by: list[str] = []
     web_port = None
-    if _tcp_open(ip, 30000, timeout):
-        detected_by.append("telnet30000")
+    if _ma2_telnet_signature(ip, timeout):
+        detected_by.append("ma2-telnet30000")
     if _http_ma_signature(ip, timeout):
-        detected_by.append("web80")
+        detected_by.append("ma2-web80")
         web_port = 80
     is_local = ip in {"127.0.0.1", "localhost", local_ip}
-    if not detected_by and not is_local:
+    if not detected_by:
         return None
     return {
         "ip": ip,
@@ -90,7 +105,7 @@ def _probe_host(ip: str, timeout: float, local_ip: str) -> dict | None:
     }
 
 
-def scan_ma2_instances(timeout: float = 1.0) -> list[dict]:
+def scan_ma2_instances(timeout: float = 0.35) -> list[dict]:
     local_ip = _local_ip()
     network = _network_for_ip(local_ip)
     candidates = [str(ip) for ip in network.hosts()]
