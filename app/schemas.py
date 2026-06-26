@@ -32,7 +32,7 @@ class DmxChannel(BaseModel):
     resolution: Literal[8, 16, 24, 32] = 8
     byteOrder: Literal["MSB", "LSB"] = "MSB"
     defaultValue: int = 0
-    highlightValue: int = 255
+    highlightValue: int = 100
     physicalFrom: float = 0
     physicalTo: float = 1
     unit: str = "Percent"
@@ -72,4 +72,3 @@ class Preset(BaseModel):
     description: str = ""
     version: str = "1.0"
     payload: dict
-

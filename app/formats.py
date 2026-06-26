@@ -9,6 +9,35 @@ MA_NS = "http://schemas.malighting.de/grandma2/xml/MA"
 def safe_name(value): return re.sub(r'[^A-Za-z0-9_.-]+', '_', value).strip('_') or 'fixture'
 def bytes_for(ch): return ch.resolution // 8
 def max_dmx(ch): return (1 << ch.resolution) - 1
+def max_dmx_for_resolution(resolution): return (1 << int(resolution)) - 1
+def clamp_percent(value):
+    try: number=float(value)
+    except (TypeError, ValueError): number=0
+    return max(0,min(100,number))
+def percent_to_dmx(value, resolution):
+    return round(clamp_percent(value) / 100 * max_dmx_for_resolution(resolution))
+def percent_or_legacy_dmx_to_dmx(value, resolution):
+    try: number=float(value)
+    except (TypeError, ValueError): number=0
+    if number > 100:
+        return round(max(0,min(max_dmx_for_resolution(resolution),number)))
+    return percent_to_dmx(number, resolution)
+def percent_or_legacy_dmx_to_percent(value, resolution):
+    try: number=float(value)
+    except (TypeError, ValueError): number=0
+    if number > 100:
+        return dmx_to_percent(number, resolution)
+    return round(clamp_percent(number))
+def ma2_highlight_value(value, resolution):
+    try: number=float(value)
+    except (TypeError, ValueError): number=0
+    if number <= 0:
+        return "None"
+    return str(percent_or_legacy_dmx_to_percent(number, resolution))
+def dmx_to_percent(value, resolution):
+    try: number=float(value)
+    except (TypeError, ValueError): number=0
+    return round(max(0,min(max_dmx_for_resolution(resolution),number)) / max_dmx_for_resolution(resolution) * 100)
 
 def validate_fixture(f: FixtureDocument):
     issues = []
@@ -38,14 +67,14 @@ def export_ma2(f: FixtureDocument, mode_index=0):
     module = etree.SubElement(modules, f"{{{MA_NS}}}Module", name="Main Module", **{"class":f.category.upper().replace(' ','_')})
     etree.SubElement(etree.SubElement(module, f"{{{MA_NS}}}Body"), f"{{{MA_NS}}}Size", x="0.5", y="0.5", z="0.5")
     for ch in mode.channels:
-        attrs = {"attribute":ch.attribute,"feature":ch.group,"preset":ch.group,"coarse":str(ch.address),"default":str(ch.defaultValue),"highlight_value":str(ch.highlightValue)}
+        attrs = {"attribute":ch.attribute,"feature":ch.group,"preset":ch.group,"coarse":str(ch.address),"default":str(percent_or_legacy_dmx_to_dmx(ch.defaultValue,ch.resolution)),"highlight_value":ma2_highlight_value(ch.highlightValue,ch.resolution)}
         if ch.resolution >= 16: attrs["fine"] = str(ch.address + 1)
         if ch.resolution >= 24: attrs["ultra"] = str(ch.address + 2)
         if ch.resolution >= 32: attrs["ultimo"] = str(ch.address + 3)
         ct = etree.SubElement(module, f"{{{MA_NS}}}ChannelType", **attrs)
         funcs = ch.functions or [type('F',(),{"name":ch.name,"dmxFrom":0,"dmxTo":max_dmx(ch),"physicalFrom":ch.physicalFrom,"physicalTo":ch.physicalTo,"attribute":ch.attribute})()]
         for fn in funcs:
-            etree.SubElement(ct, f"{{{MA_NS}}}ChannelFunction", name=fn.name, from_=str(fn.dmxFrom), to=str(fn.dmxTo), min_dmx_24=str(round(fn.dmxFrom/max_dmx(ch)*16777215)), max_dmx_24=str(round(fn.dmxTo/max_dmx(ch)*16777215)), physfrom=str(fn.physicalFrom), physto=str(fn.physicalTo), attribute=fn.attribute, feature=ch.group, preset=ch.group)
+            etree.SubElement(ct, f"{{{MA_NS}}}ChannelFunction", name=fn.name, from_=str(dmx_to_percent(fn.dmxFrom,ch.resolution)), to=str(dmx_to_percent(fn.dmxTo,ch.resolution)), min_dmx_24=str(round(fn.dmxFrom/max_dmx(ch)*16777215)), max_dmx_24=str(round(fn.dmxTo/max_dmx(ch)*16777215)), physfrom=str(fn.physicalFrom), physto=str(fn.physicalTo), attribute=fn.attribute, feature=ch.group, preset=ch.group)
     instances = etree.SubElement(ft, f"{{{MA_NS}}}Instances")
     etree.SubElement(instances, f"{{{MA_NS}}}Instance", module_index="0", patch="1", locked="true")
     etree.SubElement(ft, f"{{{MA_NS}}}Wheels")
@@ -66,7 +95,9 @@ def import_ma2(data: bytes):
         funcs=[]
         for fn in ct.xpath('./*[local-name()="ChannelFunction"]'):
             funcs.append({"id":str(uuid.uuid4()),"name":fn.get('name',attr),"dmxFrom":int(fn.get('from',0)),"dmxTo":int(fn.get('to',(1<<res)-1)),"physicalFrom":float(fn.get('physfrom',0)),"physicalTo":float(fn.get('physto',1)),"attribute":fn.get('attribute',attr)})
-        channels.append({"id":str(uuid.uuid4()),"address":coarse,"attribute":attr,"group":ct.get('feature',meta['maFeature'] if meta else 'CONTROL'),"name":meta['ueAttribute'] if meta else attr,"resolution":res,"byteOrder":"MSB","defaultValue":int(ct.get('default',0)),"highlightValue":int(ct.get('highlight_value',(1<<res)-1)),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
+        default_value=ct.get('default',0)
+        highlight_value=ct.get('highlight_value','100')
+        channels.append({"id":str(uuid.uuid4()),"address":coarse,"attribute":attr,"group":ct.get('feature',meta['maFeature'] if meta else 'CONTROL'),"name":meta['ueAttribute'] if meta else attr,"resolution":res,"byteOrder":"MSB","defaultValue":dmx_to_percent(default_value,res),"highlightValue":0 if str(highlight_value).lower()=='none' else percent_or_legacy_dmx_to_percent(highlight_value,res),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
     return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('name','瀵煎叆鐏叿'),"shortName":''.join(ft.xpath('./*[local-name()="short_name"]/text()')),"manufacturer":{"id":str(uuid.uuid4()),"name":manufacturer,"shortName":short_m},"category":"Other","version":"1.0","notes":"鐢?MA2 XML 瀵煎叆","modes":[{"id":str(uuid.uuid4()),"name":ft.get('mode','榛樿妯″紡'),"channels":channels}],"wheels":[]}
 
 def export_gdtf(f: FixtureDocument):
@@ -90,7 +121,7 @@ def export_gdtf(f: FixtureDocument):
             byte_count=bytes_for(ch); offsets=','.join(str(ch.address+i) for i in range(byte_count)); geometry='Yoke' if ch.attribute=='PAN' else ('Head' if ch.attribute=='TILT' else 'Beam'); function_name=(ch.name or ch.ueAttribute).replace('.','_'); initial=f'{geometry}_{ch.ueAttribute}.{ch.ueAttribute}.{function_name}'
             dc=etree.SubElement(chans,'DMXChannel',DMXBreak='1',Offset=offsets,Highlight='None',Geometry=geometry,InitialFunction=initial); lc=etree.SubElement(dc,'LogicalChannel',Attribute=ch.ueAttribute,Snap='No',Master='None',MibFade='0',DMXChangeTimeLimit='0')
             funcs=ch.functions or [type('F',(),{"name":function_name,"dmxFrom":0,"physicalFrom":ch.physicalFrom,"physicalTo":ch.physicalTo})()]
-            for fn in funcs: etree.SubElement(lc,'ChannelFunction',Name=(fn.name or function_name).replace('.','_'),Attribute=ch.ueAttribute,OriginalAttribute='',DMXFrom=f'{fn.dmxFrom}/{byte_count}',Default=f'{ch.defaultValue}/{byte_count}',PhysicalFrom=str(fn.physicalFrom),PhysicalTo=str(fn.physicalTo),RealFade='0',RealAcceleration='0')
+            for fn in funcs: etree.SubElement(lc,'ChannelFunction',Name=(fn.name or function_name).replace('.','_'),Attribute=ch.ueAttribute,OriginalAttribute='',DMXFrom=f'{fn.dmxFrom}/{byte_count}',Default=f'{percent_or_legacy_dmx_to_dmx(ch.defaultValue,ch.resolution)}/{byte_count}',PhysicalFrom=str(fn.physicalFrom),PhysicalTo=str(fn.physicalTo),RealFade='0',RealAcceleration='0')
         etree.SubElement(mn,'Relations'); etree.SubElement(mn,'FTMacros')
     etree.SubElement(ft,'FTPresets'); etree.SubElement(ft,'Revisions')
     xml=etree.tostring(root,encoding='utf-8',xml_declaration=True,pretty_print=True)
@@ -113,7 +144,8 @@ def import_gdtf(data: bytes):
             for fn in lc.findall('./ChannelFunction'):
                 raw=fn.get('DMXFrom','0/1').split('/')[0]; funcs.append({"id":str(uuid.uuid4()),"name":fn.get('Name',attr),"dmxFrom":int(raw),"dmxTo":(1<<(8*len(offsets)))-1,"physicalFrom":float(fn.get('PhysicalFrom',0)),"physicalTo":float(fn.get('PhysicalTo',1)),"attribute":fn.get('Attribute',attr)})
             default_raw=dc.get('Default') or (lc.find('./ChannelFunction').get('Default') if lc.find('./ChannelFunction') is not None else '0') or '0'; highlight_raw=dc.get('Highlight') or str((1<<(8*len(offsets)))-1); highlight_raw=str((1<<(8*len(offsets)))-1) if highlight_raw=='None' else highlight_raw; ma_attr=meta['ma2Attribute'] if meta else attr
-            channels.append({"id":str(uuid.uuid4()),"address":offsets[0],"attribute":ma_attr,"group":meta['maFeature'] if meta else 'CONTROL',"name":meta['ueAttribute'] if meta else attr,"resolution":8*len(offsets),"byteOrder":"MSB","defaultValue":int(default_raw.split('/')[0]),"highlightValue":int(highlight_raw.split('/')[0]),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
+            res=8*len(offsets)
+            channels.append({"id":str(uuid.uuid4()),"address":offsets[0],"attribute":ma_attr,"group":meta['maFeature'] if meta else 'CONTROL',"name":meta['ueAttribute'] if meta else attr,"resolution":res,"byteOrder":"MSB","defaultValue":dmx_to_percent(default_raw.split('/')[0],res),"highlightValue":dmx_to_percent(highlight_raw.split('/')[0],res),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
         modes.append({"id":str(uuid.uuid4()),"name":mn.get('Name','榛樿妯″紡'),"channels":channels})
     return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('Name','瀵煎叆鐏叿'),"shortName":ft.get('ShortName',''),"manufacturer":{"id":str(uuid.uuid4()),"name":ft.get('Manufacturer','鏈煡鍏徃'),"shortName":""},"category":"Other","version":"1.0","notes":"鐢?GDTF 瀵煎叆","modes":modes,"wheels":[]}
 
@@ -236,6 +268,11 @@ def _ma2_feedback_warnings(feedback: str) -> list[str]:
     if 'NO OBJECTS FOUND' in upper:
         warnings.append('MA2 could not find the requested Fixture ID.')
     return warnings
+
+
+def _ma2_is_missing_object_feedback(value: str) -> bool:
+    upper=value.upper()
+    return 'NO OBJECTS FOUND' in upper or 'OBJECT DOES NOT EXIST' in upper or upper.startswith('ERROR #14')
 
 
 def _parse_fixturetype_numbers(feedback: str, wanted: set[str]) -> dict[str, int]:
@@ -361,6 +398,8 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
     test_only=bool(options.get('testOnly'))
     import_types=bool(options.get('importFixtureTypes', True))
     patch_fixtures=bool(options.get('patchFixtures', True))
+    import_mode=str(options.get('mode') or 'all').lower()
+    overwrite_show=import_mode=='overwrite'
     errors=[]
     warnings=[]
     sent_commands=[]
@@ -377,7 +416,10 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
         feedback_log.append({'command':command,'feedback':feedback})
         command_errors=_ma2_feedback_errors(feedback)
         if ignore_missing:
-            command_errors=[err for err in command_errors if 'NO OBJECTS FOUND' not in err.upper()]
+            if _ma2_is_missing_object_feedback(feedback):
+                command_errors=[]
+            else:
+                command_errors=[err for err in command_errors if not _ma2_is_missing_object_feedback(err)]
         errors.extend(command_errors)
         command_warnings=_ma2_feedback_warnings(feedback)
         if ignore_missing:
@@ -414,6 +456,11 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
             if errors:
                 return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
 
+            if overwrite_show:
+                show_name=safe_name(scene_name or 'FixtureForge')
+                if not send_command(sock, f'NewShow "{_ma2_quote(show_name)}" /nc', wait=3.0):
+                    return {'success':False,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
+
             temp_path=import_dir
             _, fixture_files, _, _=_ma2_patch_assets(fixtures, scene_name, items)
             import_paths={}
@@ -430,9 +477,10 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
                     if not send_command(sock, command):
                         break
                 if not errors:
-                    for name in sorted(wanted):
-                        if not send_command(sock, f'Delete FixtureType "{_ma2_quote(name)}"', ignore_missing=True):
-                            break
+                    if not overwrite_show:
+                        for name in sorted(wanted):
+                            if not send_command(sock, f'Delete FixtureType "{_ma2_quote(name)}"', ignore_missing=True):
+                                break
                     for fixture_file in fixture_files:
                         if not send_command(sock, f'Import "{_ma2_quote(import_paths[fixture_file])}"'):
                             break
@@ -453,13 +501,17 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
                         handle.write(export_ma2_layer(fixtures, scene_name, universe_items, fixture_type_numbers, layer_name=layer_name))
                     cleanup_files.append(layer_path)
                     layer_files.append(layer_file)
-                    for command in ['CD /','CD EditSetup','CD Layers',f'Delete Layer "{_ma2_quote(layer_name)}"',f'Import "{_ma2_quote(layer_file)}"']:
+                    commands=['CD /','CD EditSetup','CD Layers']
+                    if not overwrite_show:
+                        commands.append(f'Delete Layer "{_ma2_quote(layer_name)}"')
+                    commands.append(f'Import "{_ma2_quote(layer_file)}"')
+                    for command in commands:
                         if not send_command(sock, command, ignore_missing=command.startswith('Delete Layer ')):
                             break
                     if errors:
                         break
                 if not errors:
-                    warnings.append('MA2 Layer overwrite complete. Fixture Forge web data replaced existing target Universe Layer(s).')
+                    warnings.append('MA2 overwrite complete. New show was created and Fixture Forge web data was imported.' if overwrite_show else 'MA2 Layer overwrite complete. Fixture Forge web data replaced existing target Universe Layer(s).')
                     send_command(sock, 'CD Root')
             return {'success':not errors,'sent':len(sent_commands),'errors':errors,'warnings':warnings,'files':[name+'.xml' for name in fixture_files],'tempPath':temp_path,'commands':sent_commands,'feedback':feedback_log}
     except Exception as exc:

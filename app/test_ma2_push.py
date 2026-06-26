@@ -1,4 +1,4 @@
-from app.formats import push_ma2_to_onpc
+from app.formats import export_ma2, push_ma2_to_onpc
 from app.schemas import FixtureDocument
 
 
@@ -52,13 +52,37 @@ def fixture_doc():
                 "resolution": 8,
                 "byteOrder": "MSB",
                 "defaultValue": 0,
-                "highlightValue": 255,
+                "highlightValue": 100,
                 "ueAttribute": "Dimmer",
                 "functions": [],
             }],
         }],
         "wheels": [],
     })
+
+
+def test_export_ma2_converts_default_to_dmx_but_keeps_highlight_percent():
+    fixture = fixture_doc()
+    channel = fixture.modes[0].channels[0]
+    channel.defaultValue = 50
+    channel.highlightValue = 100
+
+    xml = export_ma2(fixture)
+
+    assert b'default="128"' in xml
+    assert b'highlight_value="100"' in xml
+    assert b'from="0"' in xml
+    assert b'to="100"' in xml
+
+
+def test_export_ma2_zero_highlight_value_exports_none():
+    fixture = fixture_doc()
+    fixture.modes[0].channels[0].highlightValue = 0
+
+    xml = export_ma2(fixture)
+
+    assert b'highlight_value="None"' in xml
+    assert b'highlight_value="0"' not in xml
 
 
 def patch_item():
@@ -82,6 +106,86 @@ def overwrite_feedback():
         b'1 object(s) from "Scene_Universe_002.xml" imported.\r\n',
         b"Executing : ChangeDest Root\r\n",
     ]
+
+
+def missing_fixturetype_feedback():
+    return [
+        b"banner\r\n",
+        b"Logged in as User 'administrator'\r\n",
+        b"Executing : ChangeDest /\r\n",
+        b"Executing : ChangeDest EditSetup\r\n",
+        b"Executing : ChangeDest FixtureTypes\r\n",
+        b'Error : Delete FixtureType "Wash"\r\nError #14: OBJECT DOES NOT EXIST\r\n',
+        b'1 object(s) from "Manu_Wash_Basic.xml" imported.\r\n',
+        b"FixtureType 16 16   Wash                  Wash                  Manu\r\n",
+        b"Executing : ChangeDest /\r\n",
+        b"Executing : ChangeDest EditSetup\r\n",
+        b"Executing : ChangeDest Layers\r\n",
+        b"WARNING, NO OBJECTS FOUND FOR LIST\r\n",
+        b'1 object(s) from "Scene_Universe_002.xml" imported.\r\n',
+        b"Executing : ChangeDest Root\r\n",
+    ]
+
+
+def new_show_feedback():
+    return [
+        b"banner\r\n",
+        b"Logged in as User 'administrator'\r\n",
+        b"New show created\r\n",
+        b"Executing : ChangeDest /\r\n",
+        b"Executing : ChangeDest EditSetup\r\n",
+        b"Executing : ChangeDest FixtureTypes\r\n",
+        b'1 object(s) from "Manu_Wash_Basic.xml" imported.\r\n',
+        b"FixtureType 16 16   Wash                  Wash                  Manu\r\n",
+        b"Executing : ChangeDest /\r\n",
+        b"Executing : ChangeDest EditSetup\r\n",
+        b"Executing : ChangeDest Layers\r\n",
+        b'1 object(s) from "Scene_Universe_002.xml" imported.\r\n',
+        b"Executing : ChangeDest Root\r\n",
+    ]
+
+
+def test_push_ma2_overwrite_creates_new_show_without_deleting_existing_objects(monkeypatch, tmp_path):
+    sent = []
+    monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, new_show_feedback()))
+    monkeypatch.setattr("app.formats.time.sleep", lambda delay: None)
+    monkeypatch.setattr("app.formats._ma2_data_dir", lambda kind: str(tmp_path))
+
+    result = push_ma2_to_onpc(
+        {"fixture-1": fixture_doc()},
+        [patch_item()],
+        "Scene",
+        username="administrator",
+        password="admin",
+        options={"mode": "overwrite"},
+    )
+
+    assert result["success"] is True
+    assert 'NewShow "Scene" /nc' in sent
+    assert not any(command.startswith("Delete FixtureType ") for command in sent)
+    assert not any(command.startswith("Delete Layer ") for command in sent)
+    assert 'Import "Manu_Wash_Basic.xml"' in sent
+    assert 'Import "Scene_Universe_002.xml"' in sent
+
+
+def test_push_ma2_ignores_missing_fixturetype_on_first_import(monkeypatch, tmp_path):
+    sent = []
+    monkeypatch.setattr("app.formats.socket.create_connection", lambda *args, **kwargs: DummySocket(sent, missing_fixturetype_feedback()))
+    monkeypatch.setattr("app.formats.time.sleep", lambda delay: None)
+    monkeypatch.setattr("app.formats._ma2_data_dir", lambda kind: str(tmp_path))
+
+    result = push_ma2_to_onpc(
+        {"fixture-1": fixture_doc()},
+        [patch_item()],
+        "Scene",
+        username="administrator",
+        password="admin",
+    )
+
+    assert result["success"] is True
+    assert 'Delete FixtureType "Wash"' in sent
+    assert 'Import "Manu_Wash_Basic.xml"' in sent
+    assert not any("OBJECT DOES NOT EXIST" in error for error in result["errors"])
 
 
 def test_push_ma2_local_replaces_fixturetype_and_overwrites_universe_layer(monkeypatch, tmp_path):
