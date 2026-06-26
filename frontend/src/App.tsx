@@ -54,7 +54,7 @@ const defaultChannel=(address:number,attr?:AttributeDef):DmxChannel=>({
   resolution:8,
   byteOrder:'MSB',
   defaultValue:0,
-  highlightValue:255,
+  highlightValue:100,
   physicalFrom:0,
   physicalTo:1,
   unit:'Percent',

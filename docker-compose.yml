@@ -4,12 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: fixture-forge-api
-    network_mode: host
     restart: unless-stopped
     environment:
       DATABASE_URL: sqlite:////app/data/fixture-forge.db
     volumes:
       - ./data:/app/data
+    expose:
+      - "8000"
 
   web:
     build:
@@ -19,8 +20,6 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-    extra_hosts:
-      - "api:host-gateway"
     ports:
       - "80:5173"
       - "5173:5173"

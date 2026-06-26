@@ -13,3 +13,18 @@ web.tar
 # Keep dist (Docker build artifacts)
 !frontend/dist/
 !frontend/dist/**
+
+# 敏感部署文件 - 勿上传至 GitHub
+deploy-server.sh
+upload-deploy.ps1
+deploy.ps1
+*.pem
+*.key
+*.crt
+.env
+data/
+Dockerfile.api
+Dockerfile.web
+docker-compose.yml
+docker/
+deploy/
