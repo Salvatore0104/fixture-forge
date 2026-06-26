@@ -287,10 +287,21 @@ function Workbench(){
     }
   };
 
-  const addFixture=()=>{
+  const addFixture=async()=>{
     const f=emptyFixture();
     select(f);
     setActive(f,true);
+    setAutoSaveState('saving');
+    try{
+      const saved=await api.create(f);
+      setFixtures([...fixtures.filter(x=>x.id!==saved.id),saved]);
+      setActive(saved,false);
+      setAutoSaveState('saved');
+      message.success('已添加新灯具，可继续编辑通道和参数');
+    }catch(e){
+      setAutoSaveState('error');
+      message.error((e as Error).message);
+    }
   };
 
   const removeFixture=async(id:string)=>{
@@ -402,7 +413,10 @@ function Workbench(){
 
   const openAddPatch=(fixtureId?:string)=>{
     const fixture=fixtures.find(x=>x.id===(fixtureId||fixtures[0]?.id));
-    if(!fixture)return;
+    if(!fixture){
+      message.warning('请先在左侧灯具库点击 + 创建灯具，或导入已有灯具文件');
+      return;
+    }
     const universe=universeView;
     setAddPatch({fixtureId:fixture.id,modeName:fixture.modes[0]?.name||'Profile',prefix:defaultPatchPrefix(fixture),universe,address:nextPatchAddress(universe),quantity:1,increment:true});
     setAddPatchOpen(true);
@@ -868,7 +882,7 @@ function Workbench(){
         </div>
         <div className="dmxlib-body">
           <div className="patch-panel">
-            <div className="patch-toolbar"><Button type="primary" icon={<PlusOutlined/>} disabled={!fixtures.length} onClick={()=>openAddPatch()}>添加Fixture</Button><Input prefix={<SearchOutlined/>} placeholder="搜索配接…"/></div>
+            <div className="patch-toolbar"><Button type="primary" icon={<PlusOutlined/>} onClick={()=>openAddPatch()}>添加Fixture</Button><Input prefix={<SearchOutlined/>} placeholder="搜索配接…"/></div>
             <div className="patch-table">
               <div className="patch-row header"><span>灯具配接</span><span>FID</span><span>灯具类型</span><span>模式</span><span>配接</span><span></span></div>
               {mvrItems.map(item=>{
@@ -884,7 +898,7 @@ function Workbench(){
                   <Button danger type="text" icon={<DeleteOutlined/>} onClick={e=>{e.stopPropagation();deleteMvrItems(selectedPatchIds.includes(item.id)?selectedPatchIds:[item.id])}}/>
                 </div>;
               })}
-              {!mvrItems.length&&<Empty description="从左侧灯具库拖入或点击添加 Fixture"/>}
+              {!mvrItems.length&&<Empty description={fixtures.length?'从左侧灯具库拖入或点击添加 Fixture':'请先在左侧灯具库点击 + 创建灯具，或导入已有灯具文件'}/>}
             </div>
           </div>
          <div className="universe-panel">
