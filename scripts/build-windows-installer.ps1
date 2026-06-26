@@ -33,4 +33,5 @@ if (-not $iscc) {
   throw "ISCC.exe not found. Install Inno Setup 6, then rerun this script."
 }
 
-& $iscc.Source packaging/FixtureForge.iss
+$isccPath = if ($iscc.Source) { $iscc.Source } else { $iscc.FullName }
+& $isccPath packaging/FixtureForge.iss
