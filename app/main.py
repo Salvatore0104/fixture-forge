@@ -1,6 +1,8 @@
-﻿import io, json, uuid
+﻿import io, json, sys, uuid
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from .schemas import FixtureDocument, Preset, Manufacturer
 from .db import list_records, get_record, save_record, delete_record
 from .catalog import GROUPS, ATTRIBUTES
@@ -184,3 +186,20 @@ def restore(payload:dict):
     for kind,key in [('fixture','fixtures'),('preset','presets'),('manufacturer','manufacturers')]:
         for item in payload.get(key,[]): save_record(item['id'],kind,item,None)
     return {'ok':True}
+
+def _frontend_dist_dir():
+    root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
+    candidates = [
+        root / 'frontend' / 'dist',
+        Path(__file__).resolve().parents[1] / 'frontend' / 'dist',
+        Path.cwd() / 'frontend' / 'dist',
+    ]
+    for candidate in candidates:
+        if (candidate / 'index.html').exists():
+            return candidate
+    return None
+
+_dist_dir = _frontend_dist_dir()
+if _dist_dir:
+    app.mount('/', StaticFiles(directory=str(_dist_dir), html=True), name='frontend')
+

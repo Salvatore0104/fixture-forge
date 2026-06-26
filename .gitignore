@@ -8,6 +8,8 @@ extract_tmp/
 api.tar
 web.tar
 *.db
+/build/
+/dist/
 # Keep dist (Docker build artifacts)
 !frontend/dist/
 !frontend/dist/**
