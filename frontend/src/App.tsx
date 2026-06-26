@@ -1014,14 +1014,14 @@ function Workbench(){
       </section>
       <section className="editor-head"><div><b>通道编辑器</b><small> MA FeatureGroup → Attribute 分级选择</small></div><Button icon={<SettingOutlined/>} onClick={()=>setManagerOpen(true)}>MA 属性管理</Button><Button type="primary" ghost icon={<PlusOutlined/>} onClick={addChannel}>添加通道</Button><Input prefix={<SearchOutlined/>} placeholder="搜索通道…" value={query} onChange={e=>setQuery(e.target.value)}/></section>
       <section className="table-wrap">
-        <table><thead><tr><th></th><th>CH</th><th>MA 属性</th><th>自定义名称</th><th>分辨率</th><th>默认值</th><th>范围</th><th>属性族</th><th>操作</th></tr></thead><tbody>
+        <table><thead><tr><th></th><th>CH</th><th>MA 属性</th><th>自定义名称</th><th>分辨率</th><th>默认值</th><th>DMX 范围</th><th>属性族</th><th>操作</th></tr></thead><tbody>
           {shown.map(ch=><tr key={ch.id} className={ch.id===channelId?'selected':''} onClick={()=>selectChannel(ch.id)}>
             <td><HolderOutlined/></td><td>{ch.address}</td>
             <td><Select popupMatchSelectWidth={380} showSearch optionFilterProp="label" value={ch.attribute} onChange={v=>{const a=catalog.attributes.find(x=>x.id===v)!;patchChannelById(ch.id,{attribute:v,group:a.maFeature,name:a.ueAttribute,ueAttribute:a.ueAttribute})}} options={attributeOptions(catalog)}/></td>
             <td><Input value={ch.name} onChange={e=>patchChannelById(ch.id,{name:e.target.value.replace(/[^A-Za-z0-9 _.-]/g,'')})}/></td>
             <td><Select value={ch.resolution} onChange={(v:Resolution)=>patchChannelById(ch.id,{resolution:v})} options={[8,16,24,32].map(v=>({value:v,label:`${v} bit`}))}/></td>
-            <td><InputNumber min={0} max={100} value={ch.defaultValue} onChange={v=>patchChannelById(ch.id,{defaultValue:v||0})}/></td>
-            <td>0 – 100</td><td><Tag color="blue">{ch.group}</Tag></td>
+            <td><InputNumber min={0} value={ch.defaultValue} onChange={v=>patchChannelById(ch.id,{defaultValue:v||0})}/></td>
+            <td>0 – {Math.pow(2,ch.resolution)-1}</td><td><Tag color="blue">{ch.group}</Tag></td>
             <td><Tooltip title="复制"><Button type="text" icon={<CopyOutlined/>} onClick={e=>{e.stopPropagation();copyChannel(ch.id)}}/></Tooltip><Popconfirm title="删除此通道？" onConfirm={()=>removeChannel(ch.id)}><Button danger type="text" icon={<DeleteOutlined/>} onClick={e=>e.stopPropagation()}/></Popconfirm></td>
           </tr>)}
         </tbody></table>
@@ -1037,7 +1037,7 @@ function Workbench(){
         <label>MA 属性（中文仅显示）<Select showSearch optionFilterProp="label" value={channel.attribute} onChange={v=>{const a=catalog.attributes.find(x=>x.id===v)!;patchChannelById(channel.id,{attribute:v,group:a.maFeature,name:a.ueAttribute,ueAttribute:a.ueAttribute})}} options={attributeOptions(catalog)}/></label>
         <label>分辨率<Select value={channel.resolution} onChange={(v:Resolution)=>patchChannelById(channel.id,{resolution:v})} options={[8,16,24,32].map(v=>({value:v,label:`${v} bit`}))}/></label>
         <label>字节顺序<Select value={channel.byteOrder} onChange={v=>patchChannelById(channel.id,{byteOrder:v})} options={[{value:'MSB',label:'MSB（高位优先）'},{value:'LSB',label:'LSB（低位优先）'}]}/></label>
-        <div className="two"><label>默认值<InputNumber min={0} max={100} value={channel.defaultValue} onChange={v=>patchChannelById(channel.id,{defaultValue:v||0})}/></label><label>高亮值<InputNumber min={0} max={100} value={channel.highlightValue} onChange={v=>patchChannelById(channel.id,{highlightValue:v||0})}/></label></div>
+        <div className="two"><label>默认值<InputNumber min={0} value={channel.defaultValue} onChange={v=>patchChannelById(channel.id,{defaultValue:v||0})}/></label><label>高亮值<InputNumber min={0} value={channel.highlightValue} onChange={v=>patchChannelById(channel.id,{highlightValue:v||0})}/></label></div>
         <Divider/><div className="panel-title"><span>物理范围</span><Switch checkedChildren="反向" unCheckedChildren="正常" checked={channel.inverted} onChange={v=>patchChannelById(channel.id,{inverted:v})}/></div>
         <div className="two"><label>最小值<InputNumber value={channel.physicalFrom} onChange={v=>patchChannelById(channel.id,{physicalFrom:v||0})}/></label><label>最大值<InputNumber value={channel.physicalTo} onChange={v=>patchChannelById(channel.id,{physicalTo:v||0})}/></label></div>
         <label>UE 属性（英文输出）<Input value={channel.ueAttribute} onChange={e=>patchChannelById(channel.id,{ueAttribute:e.target.value.replace(/[^A-Za-z0-9 _.-]/g,'')})}/></label>
