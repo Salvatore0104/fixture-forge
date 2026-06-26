@@ -1108,7 +1108,7 @@
 .ma2-import-mode .ant-radio-button-wrapper-checked{background:#231f12!important;border-color:#f1c232!important;color:#f1c232!important}
 .ma2-import-mode .ant-radio-button-wrapper-disabled{opacity:0.4;cursor:not-allowed}
 .ma2-import-mode .ma2-settings-help{margin-top:0;border-color:#1e2a30;background:#070d12}
-/* Remote hint text in MVR toolbar */
-.mvr-remote-hint{font-size:11px;color:#8fa0a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;line-height:1.4;flex-shrink:1;padding:4px 0}
+/* Remote notice banner inside MA2 Push modal */
+.ma2-remote-notice{font-size:12px;color:#f1c232;background:#1a1d0f;border:1px solid #4a4a20;border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:1.5}
 /* Undo/Redo buttons in MVR toolbar */
 .toolbar .ant-btn:has(.anticon-undo),.toolbar .ant-btn:has(.anticon-redo){width:32px;padding:0;display:flex;align-items:center;justify-content:center}

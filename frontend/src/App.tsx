@@ -921,7 +921,6 @@ function Workbench(){
           </Popconfirm>
           <Button type="primary" icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMvr}>生成 MVR</Button>
           <Button icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMa2Patch}>生成 MA2配接包</Button>
-          <span className="mvr-remote-hint">使用 MA2 一键导入前，请先在 MA2 onPC 中开启 Remote：Setup → Console → Global Settings → Telnet → Login Enabled</span>
           <Button icon={<ThunderboltOutlined/>} disabled={!mvrItems.length} onClick={openMa2Push}>一键导入MA2</Button>
         </>}
       </div>
@@ -1076,6 +1075,7 @@ function Workbench(){
     <Modal width={980} className="ma2-push-modal" title="一键导入 → MA2" open={ma2Open} onCancel={()=>setMa2Open(false)} footer={<div className="ma2-modal-actions"><Button onClick={()=>pushMa2(true)} loading={ma2Testing}>测试连接/登录</Button><Button type="primary" icon={<ThunderboltOutlined/>} disabled={!mvrItems.length||(ma2Mode==='selected'&&!selectedPatchIds.length)} loading={ma2Importing} onClick={()=>pushMa2(false)}>{ma2Mode==='overwrite'?'覆盖导入全部灯具':ma2Mode==='selected'?`导入选中灯具 (${selectedPatchIds.length})`:`首次导入全部灯具 (${mvrItems.length})`}</Button></div>}>
       <div className="ma2-push-layout">
         <div className="ma2-config-panel">
+          <div className="ma2-remote-notice">提示：使用前请先在 MA2 onPC 中开启 Remote — Setup → Console → Global Settings → Telnet → Login Enabled</div>
           <section>
             <div className="manager-head"><b>目标 MA2 设备</b><Button icon={<ReloadOutlined/>} loading={ma2Scanning} onClick={scanMa2}>扫描局域网</Button></div>
             {ma2Scanning&&<div className="ma2-scan-progress">正在扫描本机网段的 TCP 30000 / HTTP 80...</div>}
