@@ -11,7 +11,7 @@
 .patch-toolbar .ant-input-affix-wrapper{max-width:220px}
 .universe-grid{grid-template-columns:repeat(32,minmax(24px,1fr));grid-auto-rows:24px}
 
-/* ABSOLUTE LAST MVR OVERRIDES â€?must stay at EOF. */
+/* ABSOLUTE LAST MVR OVERRIDES éˆ¥?must stay at EOF. */
 .mvr-mode .mvr-overlay{
   top:50px!important;
   bottom:40px!important;
@@ -367,7 +367,7 @@
   pointer-events:none!important;
 }
 
-/* FINAL MVR UE-STYLE LAYOUT â€?match UE DMXLibrary density and drag bars. */
+/* FINAL MVR UE-STYLE LAYOUT éˆ¥?match UE DMXLibrary density and drag bars. */
 .mvr-mode header .toolbar{
   gap:8px!important;
 }
@@ -546,7 +546,7 @@
   grid-template-columns:minmax(500px,55%) 0px minmax(0,1fr)!important;
 }
 
-/* FINAL UI PASS â€?UE-like MVR patching surface */
+/* FINAL UI PASS éˆ¥?UE-like MVR patching surface */
 .shell>.workspace-switch{
   top:8px!important;
   left:50%!important;
@@ -700,7 +700,7 @@
 
 .universe-head .ant-checkbox-wrapper{display:none!important}
 
-/* FINAL PATCH BAR GEOMETRY â€?fixed UE-like cells, bars cover exact footprint. */
+/* FINAL PATCH BAR GEOMETRY éˆ¥?fixed UE-like cells, bars cover exact footprint. */
 .universe-grid{
   grid-template-columns:repeat(32,34px)!important;
   grid-auto-rows:24px!important;
@@ -1099,3 +1099,16 @@
 .ma2-result-panel .ma2-command-log{max-height:440px!important;margin-top:0!important}
 .ma2-command-log code+code{margin-top:8px}
 @media (max-width:900px){.ma2-push-layout{grid-template-columns:1fr}.ma2-result-panel{position:static}}
+/* MA2 import mode selector */
+.ma2-import-mode{border:1px solid #26363c;border-radius:7px;padding:12px;margin-top:12px}
+.ma2-import-mode>b{display:block;color:#f1c232;margin-bottom:10px;font-size:13px}
+.ma2-import-mode .ant-radio-group{display:flex;gap:0;width:100%;margin-bottom:10px}
+.ma2-import-mode .ant-radio-button-wrapper{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#10191d;border-color:#26363c;color:#8fa0a8;font-size:12px;padding:6px 8px;min-height:38px}
+.ma2-import-mode .ant-radio-button-wrapper:not(:first-child)::before{background:#26363c}
+.ma2-import-mode .ant-radio-button-wrapper-checked{background:#231f12!important;border-color:#f1c232!important;color:#f1c232!important}
+.ma2-import-mode .ant-radio-button-wrapper-disabled{opacity:0.4;cursor:not-allowed}
+.ma2-import-mode .ma2-settings-help{margin-top:0;border-color:#1e2a30;background:#070d12}
+/* Remote hint text in MVR toolbar */
+.mvr-remote-hint{font-size:11px;color:#8fa0a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px;line-height:1.4;flex-shrink:1;padding:4px 0}
+/* Undo/Redo buttons in MVR toolbar */
+.toolbar .ant-btn:has(.anticon-undo),.toolbar .ant-btn:has(.anticon-redo){width:32px;padding:0;display:flex;align-items:center;justify-content:center}

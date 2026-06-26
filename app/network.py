@@ -1,4 +1,5 @@
 import ipaddress
+import os
 import re
 import socket
 import subprocess
@@ -60,8 +61,8 @@ def _ma2_telnet_signature(ip: str, timeout: float) -> bool:
             except (OSError, TimeoutError):
                 sock.sendall(b"\r\n")
                 data = sock.recv(2048)
-        text = data.lower()
-        return any(token in text for token in (b"grandma", b"ma lighting", b"malighting", b"commandline", b"login"))
+        text = data.decode("utf-8", errors="replace").lower()
+        return any(token in text for token in ("grandma", "ma lighting", "malighting", "commandline", "login"))
     except OSError:
         return False
 
@@ -71,8 +72,8 @@ def _http_ma_signature(ip: str, timeout: float) -> bool:
         with socket.create_connection((ip, 80), timeout=timeout) as sock:
             sock.settimeout(timeout)
             sock.sendall(b"GET / HTTP/1.0\r\nHost: fixture-forge-scan\r\n\r\n")
-            data = sock.recv(2048).lower()
-        return any(token in data for token in (b"grandma", b"ma lighting", b"ma remote", b"malighting"))
+            data = sock.recv(2048).decode("utf-8", errors="replace").lower()
+        return any(token in data for token in ("grandma", "ma lighting", "ma remote", "malighting"))
     except OSError:
         return False
 
@@ -84,6 +85,25 @@ def _hostname(ip: str) -> str:
         return ""
 
 
+def _detect_local_ma2_processes() -> list[str]:
+    """Detect running grandMA2 onPC processes on Windows via tasklist.
+    
+    Returns a list of detected labels, e.g. ['local-process'].
+    """
+    if os.name != "nt":
+        return []
+    try:
+        output = subprocess.check_output(
+            ["tasklist", "/FI", "IMAGENAME eq grandMA2 onPC.exe", "/NH"],
+            text=True, encoding="gbk", errors="ignore", timeout=3
+        )
+    except Exception:
+        return []
+    if "grandMA2" in output and "onPC" in output:
+        return ["local-process"]
+    return []
+
+
 def _probe_host(ip: str, timeout: float, local_ip: str) -> dict | None:
     detected_by: list[str] = []
     web_port = None
@@ -93,6 +113,13 @@ def _probe_host(ip: str, timeout: float, local_ip: str) -> dict | None:
         detected_by.append("ma2-web80")
         web_port = 80
     is_local = ip in {"127.0.0.1", "localhost", local_ip}
+    # Fallback for local: check if port 30000 is open even without signature match
+    if not detected_by and is_local:
+        if _tcp_open(ip, 30000, timeout):
+            detected_by.append("ma2-port30000-open")
+        if _tcp_open(ip, 80, timeout):
+            detected_by.append("ma2-port80-open")
+            web_port = 80 if web_port is None else web_port
     if not detected_by:
         return None
     return {
@@ -100,12 +127,12 @@ def _probe_host(ip: str, timeout: float, local_ip: str) -> dict | None:
         "hostname": _hostname(ip),
         "remotePort": 30000,
         "webPort": web_port,
-        "detectedBy": detected_by or ["local"],
+        "detectedBy": detected_by,
         "isLocal": is_local,
     }
 
 
-def scan_ma2_instances(timeout: float = 0.35) -> list[dict]:
+def scan_ma2_instances(timeout: float = 0.70) -> list[dict]:
     local_ip = _local_ip()
     network = _network_for_ip(local_ip)
     candidates = [str(ip) for ip in network.hosts()]
@@ -119,5 +146,18 @@ def scan_ma2_instances(timeout: float = 0.35) -> list[dict]:
             result = future.result()
             if result:
                 found[result["ip"]] = result
+
+    # Fallback: detect local MA2 process even if no network port is open
+    if not found:
+        local_detected = _detect_local_ma2_processes()
+        if local_detected:
+            found["127.0.0.1"] = {
+                "ip": "127.0.0.1",
+                "hostname": socket.gethostname(),
+                "remotePort": 30000,
+                "webPort": None,
+                "detectedBy": local_detected,
+                "isLocal": True,
+            }
 
     return sorted(found.values(), key=lambda item: (not item["isLocal"], item["ip"]))

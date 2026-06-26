@@ -1,12 +1,13 @@
-﻿import {useEffect,useMemo,useRef,useState} from 'react';
-import {App as AntApp,Button,Checkbox,Divider,Empty,Input,InputNumber,Modal,Popconfirm,Select,Switch,Tag,Tooltip} from 'antd';
-import {ApartmentOutlined,CheckCircleOutlined,CloseCircleOutlined,CopyOutlined,DeleteOutlined,DownloadOutlined,HolderOutlined,PlusOutlined,ReloadOutlined,SaveOutlined,SearchOutlined,SettingOutlined,ThunderboltOutlined,UploadOutlined,WarningOutlined} from '@ant-design/icons';
+﻿import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {App as AntApp,Button,Checkbox,Divider,Empty,Input,InputNumber,Modal,Popconfirm,Radio,Select,Switch,Tag,Tooltip} from 'antd';
+import {ApartmentOutlined,CheckCircleOutlined,CloseCircleOutlined,CopyOutlined,DeleteOutlined,DownloadOutlined,HolderOutlined,PlusOutlined,RedoOutlined,ReloadOutlined,SaveOutlined,SearchOutlined,SettingOutlined,ThunderboltOutlined,UndoOutlined,UploadOutlined,WarningOutlined} from '@ant-design/icons';
 import {arrayMove} from '@dnd-kit/sortable';
 import {api,download,downloadMa2Patch,downloadMvr} from './api';
 import {draft} from './draft';
 import {useStore} from './store';
+import {useUndo} from './undo';
 import {compactModeAddresses,modeFootprint,removeChannelAndCompact} from './model';
-import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,Ma2Device,MvrImportOption,MvrItem,PushResult,Resolution} from './types';
+import type {AttributeDef,Catalog,DmxChannel,FixtureDocument,Ma2ImportMode,Ma2Device,MvrImportOption,MvrItem,PushResult,Resolution} from './types';
 
 const uid=()=>{
   if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
@@ -121,6 +122,52 @@ function Workbench(){
   const [ma2Importing,setMa2Importing]=useState(false);
   const [ma2Result,setMa2Result]=useState<PushResult>();
   const [ma2LogOpen,setMa2LogOpen]=useState(false);
+  const [ma2Mode,setMa2Mode]=useState<Ma2ImportMode>('all');
+  // ---- Undo/Redo for MVR items ----
+  const mvrUndo = useUndo<MvrItem[]>();
+
+  const pushMvrHistory = useCallback((items: MvrItem[], desc: string) => {
+    mvrUndo.push(items, desc);
+  }, [mvrUndo]);
+
+  const applyMvrSnapshot = useCallback((snapshot: MvrItem[] | null) => {
+    if (!snapshot) return;
+    setMvrItems(snapshot);
+    // Clean up selections that no longer exist
+    const valid = new Set(snapshot.map(item => item.id));
+    setSelectedPatchIds(ids => ids.filter(id => valid.has(id)));
+    if (selectedPatch && !valid.has(selectedPatch)) setSelectedPatch(undefined);
+    if (editingPatchId && !valid.has(editingPatchId)) setEditingPatchId(undefined);
+  }, [selectedPatch, editingPatchId]);
+
+  const handleMvrUndo = useCallback(() => {
+    const snap = mvrUndo.undo();
+    if (snap) { applyMvrSnapshot(snap); message.info(`已撤销：${mvrUndo.lastDescription}`); }
+  }, [mvrUndo, applyMvrSnapshot, message]);
+
+  const handleMvrRedo = useCallback(() => {
+    const snap = mvrUndo.redo();
+    if (snap) { applyMvrSnapshot(snap); message.info(`已重做：${mvrUndo.lastDescription}`); }
+  }, [mvrUndo, applyMvrSnapshot, message]);
+
+  // Ctrl+Z / Ctrl+Y keyboard shortcut for MVR workspace
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (workspace !== 'mvr') return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input,textarea,[contenteditable="true"],.ant-select-dropdown')) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleMvrUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleMvrRedo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [workspace, handleMvrUndo, handleMvrRedo]);
+
   useEffect(()=>{
     if(!editingPatchId)return;
     const handler=(e:PointerEvent)=>{
@@ -205,7 +252,9 @@ function Workbench(){
       if(target?.closest('input,textarea,[contenteditable="true"],.ant-select-dropdown'))return;
       e.preventDefault();
       const doomed=new Set(selectedPatchIds);
-      setMvrItems(items=>items.filter(item=>!doomed.has(item.id)));
+      const nextItems=mvrItems.filter(item=>!doomed.has(item.id));
+      pushMvrHistory(mvrItems, `删除 ${doomed.size} 个配接`);
+      setMvrItems(nextItems);
       setSelectedPatch(undefined);
       setSelectedPatchIds([]);
       setEditingPatchId(undefined);
@@ -213,7 +262,7 @@ function Workbench(){
     };
     window.addEventListener('keydown',onKeyDown);
     return()=>window.removeEventListener('keydown',onKeyDown);
-  },[workspace,selectedPatchIds,message]);
+  },[workspace,selectedPatchIds,message,mvrItems,pushMvrHistory]);
 
   useEffect(()=>{
     if(!active||!dirty)return;
@@ -445,7 +494,9 @@ function Workbench(){
       if(addPatch.increment)cursor=advancePatchPosition(pos.universe,pos.address,footprint);
       return item;
     });
-    setMvrItems([...mvrItems,...created]);
+    const nextItems=[...mvrItems,...created];
+    pushMvrHistory(mvrItems, `添加 ${count} 个配接`);
+    setMvrItems(nextItems);
     setSelectedPatchIds(created.map(item=>item.id));
     setSelectedPatch(created[created.length-1]?.id);
     setPatchSelectionAnchor(created[0]?.id);
@@ -454,6 +505,21 @@ function Workbench(){
   };
 
   const patchMvrItem=(id:string,p:Partial<MvrItem>)=>setMvrItems(items=>items.map(x=>x.id===id?{...x,...p}:x));
+
+  // Track whether we've already pushed history for the current editing session
+  const editHistoryRef = useRef(false);
+  const patchMvrItemWithHistory=(id:string,p:Partial<MvrItem>,desc?:string)=>{
+    if (!editHistoryRef.current) {
+      pushMvrHistory(mvrItems, desc || `编辑配接属性`);
+      editHistoryRef.current = true;
+    }
+    setMvrItems(items=>items.map(x=>x.id===id?{...x,...p}:x));
+  };
+
+  // Reset edit history tracking when editing patch changes
+  useEffect(() => {
+    if (!editingPatchId) editHistoryRef.current = false;
+  }, [editingPatchId]);
   const sortedPatchIds=(ids:string[],items=mvrItems)=>{
     const wanted=new Set(ids);
     return items.filter(item=>wanted.has(item.id)).sort((a,b)=>(a.universe-b.universe)||(a.address-b.address)||(a.fid-b.fid)).map(item=>item.id);
@@ -470,7 +536,9 @@ function Workbench(){
 
   const deleteMvrItems=(ids:string[])=>{
     const doomed=new Set(ids);
-    setMvrItems(items=>items.filter(item=>!doomed.has(item.id)));
+    const nextItems=mvrItems.filter(item=>!doomed.has(item.id));
+    pushMvrHistory(mvrItems, `删除 ${doomed.size} 个配接`);
+    setMvrItems(nextItems);
     setSelectedPatch(undefined);
     setSelectedPatchIds([]);
     setEditingPatchId(undefined);
@@ -630,6 +698,8 @@ function Workbench(){
     setPatchSelectionAnchor(draggedIds[0]);
     setSelectedPatch(draggedIds[0]);
     const dragItem=mvrItems.find(x=>x.id===id);
+    // Push history before drag starts
+    pushMvrHistory(mvrItems, `移动 ${draggedIds.length} 个配接`);
     // Calculate offset: item first channel - grid cell under cursor at press time
     const initPos=patchPositionFromPointer(e.clientX,e.clientY);
     const itemAddr=(dragItem?.address||1);
@@ -752,7 +822,10 @@ function Workbench(){
     setMa2Result(undefined);
     setMa2LogOpen(false);
     try{
-      const result=await api.pushToMa2({sceneName,items:testOnly?[]:mvrItems,ma2Ip:ma2Selected,ma2Port,username:ma2Username,password:ma2Password,options:{importFixtureTypes:true,patchFixtures:true,testOnly}});
+      const mode=testOnly?'all':ma2Mode;
+      const pushItems=mode==='selected'?mvrItems.filter(item=>selectedPatchIds.includes(item.id)):mvrItems;
+      if(!testOnly&&mode==='selected'&&!pushItems.length){message.warning('请先在配接列表中选中要导入的灯具');setMa2Importing(false);return;}
+      const result=await api.pushToMa2({sceneName,items:testOnly?[]:pushItems,ma2Ip:ma2Selected,ma2Port,username:ma2Username,password:ma2Password,options:{importFixtureTypes:true,patchFixtures:true,testOnly,mode}});
       setMa2Result(result);
       if(testOnly&&result.success)message.success('TCP 30000 已连通，MA2 登录成功');
       else if(testOnly)message.error(result.errors?.[0]||'MA2 登录失败');
@@ -841,11 +914,14 @@ function Workbench(){
           <Button type="primary" icon={<SaveOutlined/>} disabled={!active} onClick={save}>保存</Button>
         </>:<>
           <Input className="mvr-filename" value={sceneName} onChange={e=>setSceneName(e.target.value)}/>
+          <Tooltip title="撤销 Ctrl+Z"><Button icon={<UndoOutlined/>} disabled={!mvrUndo.canUndo} onClick={handleMvrUndo}/></Tooltip>
+          <Tooltip title="重做 Ctrl+Y"><Button icon={<RedoOutlined/>} disabled={!mvrUndo.canRedo} onClick={handleMvrRedo}/></Tooltip>
           <Popconfirm title="清除当前 MVR 草稿？" description="会清空所有配接规划，但不会删除灯具库。" onConfirm={clearMvrDraft} okText="清除" cancelText="取消">
             <Button danger icon={<DeleteOutlined/>} disabled={!mvrItems.length}>清除</Button>
           </Popconfirm>
           <Button type="primary" icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMvr}>生成 MVR</Button>
           <Button icon={<DownloadOutlined/>} disabled={!mvrItems.length} onClick={generateMa2Patch}>生成 MA2配接包</Button>
+          <span className="mvr-remote-hint">使用 MA2 一键导入前，请先在 MA2 onPC 中开启 Remote：Setup → Console → Global Settings → Telnet → Login Enabled</span>
           <Button icon={<ThunderboltOutlined/>} disabled={!mvrItems.length} onClick={openMa2Push}>一键导入MA2</Button>
         </>}
       </div>
@@ -890,10 +966,10 @@ function Workbench(){
                 if(!f)return null;
                 const editing=editingPatchId===item.id;
                 return <div key={item.id} className={`patch-row ${selectedPatchIds.includes(item.id)?'selected':''} ${editing?'editing':''}`} onPointerDown={e=>handlePatchRowPointerDown(item.id,e)} onClick={e=>handlePatchRowClick(item.id,e)} onDoubleClick={e=>{e.stopPropagation();setPatchSelection([item.id]);setPatchSelectionAnchor(item.id);setEditingPatchId(item.id);setSelectedPatch(item.id);setUniverseView(item.universe)}}>
-                  {editing?<Input autoFocus value={item.name} onChange={e=>patchMvrItem(item.id,{name:e.target.value})}/>:<span className="patch-cell-name">{item.name}</span>}
-                  {editing?<InputNumber min={1} value={item.fid} onChange={v=>patchMvrItem(item.id,{fid:v||1})}/>:<span>{item.fid}</span>}
-                  {editing?<Select value={item.fixtureId} onChange={v=>{const nf=fixtureById.get(v)!;patchMvrItem(item.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'})}} options={fixtures.map(x=>({value:x.id,label:x.name}))}/>:<span className="patch-cell-name">{f.name}</span>}
-                  {editing?<Select value={item.modeName} onChange={v=>patchMvrItem(item.id,{modeName:v})} options={f.modes.map(m=>({value:m.name,label:m.name}))}/>:<span>{item.modeName}</span>}
+                  {editing?<Input autoFocus value={item.name} onChange={e=>patchMvrItemWithHistory(item.id,{name:e.target.value})}/>:<span className="patch-cell-name">{item.name}</span>}
+                  {editing?<InputNumber min={1} value={item.fid} onChange={v=>patchMvrItemWithHistory(item.id,{fid:v||1})}/>:<span>{item.fid}</span>}
+                  {editing?<Select value={item.fixtureId} onChange={v=>{const nf=fixtureById.get(v)!;patchMvrItemWithHistory(item.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'},'更改灯具类型')}} options={fixtures.map(x=>({value:x.id,label:x.name}))}/>:<span className="patch-cell-name">{f.name}</span>}
+                  {editing?<Select value={item.modeName} onChange={v=>patchMvrItemWithHistory(item.id,{modeName:v},'更改灯具模式')} options={f.modes.map(m=>({value:m.name,label:m.name}))}/>:<span>{item.modeName}</span>}
                   <span>{item.universe}.{item.address}</span>
                   <Button danger type="text" icon={<DeleteOutlined/>} onClick={e=>{e.stopPropagation();deleteMvrItems(selectedPatchIds.includes(item.id)?selectedPatchIds:[item.id])}}/>
                 </div>;
@@ -918,11 +994,11 @@ function Workbench(){
           if(!f)return <Empty description="灯具类型不存在"/>;
           return <>
             <div className="selected-name">{selectedMvrItem.name}</div>
-            <label>灯具名称<Input value={selectedMvrItem.name} onChange={e=>patchMvrItem(selectedMvrItem.id,{name:e.target.value})}/></label>
-            <label>Fixture 类型<Select value={selectedMvrItem.fixtureId} onChange={v=>{const nf=fixtures.find(x=>x.id===v)!;patchMvrItem(selectedMvrItem.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'})}} options={fixtures.map(x=>({value:x.id,label:`${x.manufacturer.name} · ${x.name}`}))}/></label>
-            <label>模式<Select value={selectedMvrItem.modeName} onChange={v=>patchMvrItem(selectedMvrItem.id,{modeName:v})} options={f.modes.map(m=>({value:m.name,label:`${m.name} · ${fixtureFootprint(f,m.name)} CH`}))}/></label>
-            <div className="two"><label>FID<InputNumber min={1} value={selectedMvrItem.fid} onChange={v=>patchMvrItem(selectedMvrItem.id,{fid:v||1})}/></label><label>Universe<InputNumber min={1} max={256} value={selectedMvrItem.universe} onChange={v=>{const universe=Math.max(1,Math.min(256,v||1));patchMvrItem(selectedMvrItem.id,{universe});setUniverseView(universe)}}/></label></div>
-            <div className="two"><label>起始通道<InputNumber min={1} max={512} value={selectedMvrItem.address} onChange={v=>patchMvrItem(selectedMvrItem.id,{address:v||1})}/></label><label>编辑器颜色<Input type="color" value={selectedMvrItem.color} onChange={e=>patchMvrItem(selectedMvrItem.id,{color:e.target.value})}/></label></div>
+            <label>灯具名称<Input value={selectedMvrItem.name} onChange={e=>patchMvrItemWithHistory(selectedMvrItem.id,{name:e.target.value})}/></label>
+            <label>Fixture 类型<Select value={selectedMvrItem.fixtureId} onChange={v=>{const nf=fixtures.find(x=>x.id===v)!;patchMvrItemWithHistory(selectedMvrItem.id,{fixtureId:v,modeName:nf.modes[0]?.name||'Profile'},'更改灯具类型')}} options={fixtures.map(x=>({value:x.id,label:`${x.manufacturer.name} · ${x.name}`}))}/></label>
+            <label>模式<Select value={selectedMvrItem.modeName} onChange={v=>patchMvrItemWithHistory(selectedMvrItem.id,{modeName:v},'更改灯具模式')} options={f.modes.map(m=>({value:m.name,label:`${m.name} · ${fixtureFootprint(f,m.name)} CH`}))}/></label>
+            <div className="two"><label>FID<InputNumber min={1} value={selectedMvrItem.fid} onChange={v=>patchMvrItemWithHistory(selectedMvrItem.id,{fid:v||1})}/></label><label>Universe<InputNumber min={1} max={256} value={selectedMvrItem.universe} onChange={v=>{const universe=Math.max(1,Math.min(256,v||1));patchMvrItemWithHistory(selectedMvrItem.id,{universe},'调整Universe');setUniverseView(universe)}}/></label></div>
+            <div className="two"><label>起始通道<InputNumber min={1} max={512} value={selectedMvrItem.address} onChange={v=>patchMvrItemWithHistory(selectedMvrItem.id,{address:v||1},'调整地址')}/></label><label>编辑器颜色<Input type="color" value={selectedMvrItem.color} onChange={e=>patchMvrItemWithHistory(selectedMvrItem.id,{color:e.target.value})}/></label></div>
             <Divider/><Tag color="blue">{fixtureFootprint(f,selectedMvrItem.modeName)} CH</Tag>
           </>;
         })():<Empty description="请选择一个配接"/>}
@@ -997,7 +1073,7 @@ function Workbench(){
       <div className="mvr-import"><div className="manager-head"><span>只导入 MVR 内嵌 GDTF 的 Fixture Type；不导入 Fixture Patch、Universe、地址或数量。</span><Checkbox checked={mvrImportSelected.length===mvrImportOptions.length&&mvrImportOptions.length>0} indeterminate={mvrImportSelected.length>0&&mvrImportSelected.length<mvrImportOptions.length} onChange={e=>setMvrImportSelected(e.target.checked?mvrImportOptions.map(x=>x.index):[])}>全选</Checkbox></div>{mvrImportOptions.map(option=><label className="mvr-import-row" key={option.key}><Checkbox checked={mvrImportSelected.includes(option.index)} onChange={e=>setMvrImportSelected(e.target.checked?[...mvrImportSelected,option.index]:mvrImportSelected.filter(x=>x!==option.index))}/><div><strong>{option.name}</strong><span>{option.manufacturer}</span></div><Tag color="blue">{option.footprint} CH</Tag><Tag>{option.modes.length} 个模式</Tag><code>{option.key}</code></label>)}{!mvrImportOptions.length&&<Empty description="未找到可导入的灯具类型"/>}</div>
     </Modal>
 
-    <Modal width={980} className="ma2-push-modal" title="一键导入 → MA2" open={ma2Open} onCancel={()=>setMa2Open(false)} footer={<div className="ma2-modal-actions"><Button onClick={()=>pushMa2(true)} loading={ma2Testing}>测试连接/登录</Button><Button type="primary" icon={<ThunderboltOutlined/>} disabled={!mvrItems.length} loading={ma2Importing} onClick={()=>pushMa2(false)}>开始一键导入</Button></div>}>
+    <Modal width={980} className="ma2-push-modal" title="一键导入 → MA2" open={ma2Open} onCancel={()=>setMa2Open(false)} footer={<div className="ma2-modal-actions"><Button onClick={()=>pushMa2(true)} loading={ma2Testing}>测试连接/登录</Button><Button type="primary" icon={<ThunderboltOutlined/>} disabled={!mvrItems.length||(ma2Mode==='selected'&&!selectedPatchIds.length)} loading={ma2Importing} onClick={()=>pushMa2(false)}>{ma2Mode==='overwrite'?'覆盖导入全部灯具':ma2Mode==='selected'?`导入选中灯具 (${selectedPatchIds.length})`:`首次导入全部灯具 (${mvrItems.length})`}</Button></div>}>
       <div className="ma2-push-layout">
         <div className="ma2-config-panel">
           <section>
@@ -1020,11 +1096,19 @@ function Workbench(){
               <label>MA2 用户名<Input value={ma2Username} onChange={e=>setMa2Username(e.target.value)}/></label>
               <label>MA2 密码<Input.Password value={ma2Password} onChange={e=>setMa2Password(e.target.value)} placeholder="默认 administrator/admin"/></label>
             </div>
-            <div className="ma2-settings-help">
-              <b>覆盖策略</b>
-              <span>网页中的 Fixture Type 和 Universe 配接规划是最终版本。</span>
-              <span>导入时会替换同名 Fixture Type，并覆盖目标 Universe Layer；不存在的 Universe Layer 会新建。</span>
-              <span>Error #22 表示 EditSetup 被占用；关闭 Patch/Fixture Schedule 或重启 onPC 后再试。</span>
+            <div className="ma2-import-mode">
+              <b>导入模式</b>
+              <Radio.Group value={ma2Mode} onChange={e=>setMa2Mode(e.target.value)}>
+                <Radio.Button value="all">首次导入全部灯具 ({mvrItems.length})</Radio.Button>
+                <Radio.Button value="selected" disabled={!selectedPatchIds.length}>导入选中灯具 ({selectedPatchIds.length})</Radio.Button>
+                <Radio.Button value="overwrite">覆盖导入全部灯具</Radio.Button>
+              </Radio.Group>
+              <div className="ma2-settings-help">
+                {ma2Mode==='all'&&<><b>首次导入全部灯具</b><span>将网页中全部 Fixture Type 和 Universe 配接规划导入 MA2。同名 Fixture Type 会被替换，Layer 会被覆盖；不影响其他 Layer。</span></>}
+                {ma2Mode==='selected'&&<><b>导入选中的灯具</b><span>仅导入在配接列表中选中的 Fixture Type 和 Universe Layer 到 MA2，不影响其他已配接的灯具。</span></>}
+                {ma2Mode==='overwrite'&&<><b>覆盖导入全部灯具</b><span>创建空白 Show（NewShow）清空全部灯具、Fixture Type 和 Layer，然后重新全部导入网页中的配接规划。适合网页配接规划大幅变更后的完全刷新。⚠ 会丢失 MA2 中所有未保存的编程数据。</span></>}
+                <span>Error #22 表示 EditSetup 被占用；关闭 Patch/Fixture Schedule 或重启 onPC 后再试。</span>
+              </div>
             </div>
           </section>
         </div>

@@ -217,9 +217,12 @@ def _ma2_feedback_errors(feedback: str) -> list[str]:
         if not text:
             continue
         upper=text.upper()
-        if 'LOGIN INCORRECT' in upper or 'LOGIN NEEDED' in upper or upper.startswith('ERROR #') or upper.startswith('ERROR :'):
+        if 'LOGIN INCORRECT' in upper or 'LOGIN NEEDED' in upper:
             errors.append(text)
-        elif 'WARNING, NO OBJECTS FOUND' in upper:
+        elif upper.startswith('ERROR #') or upper.startswith('ERROR :'):
+            # ERROR #14 OBJECT DOES NOT EXIST is handled by ignore_missing
+            errors.append(text)
+        elif 'NO OBJECTS FOUND' in upper:
             errors.append(text)
         elif 'OVERWRITE CONFIRMATION' in upper or 'INVALID KEY' in upper:
             errors.append(text)
@@ -361,6 +364,7 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
     test_only=bool(options.get('testOnly'))
     import_types=bool(options.get('importFixtureTypes', True))
     patch_fixtures=bool(options.get('patchFixtures', True))
+    mode=str(options.get('mode', 'all'))
     errors=[]
     warnings=[]
     sent_commands=[]
@@ -376,8 +380,12 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
         feedback=_ma2_read_feedback(sock, wait=wait)
         feedback_log.append({'command':command,'feedback':feedback})
         command_errors=_ma2_feedback_errors(feedback)
-        if ignore_missing:
-            command_errors=[err for err in command_errors if 'NO OBJECTS FOUND' not in err.upper()]
+        if ignore_missing and command.startswith('Delete '):
+            # For Delete commands in overwrite mode, all errors are expected
+            # when the target doesn't exist (Error #14, NO OBJECTS FOUND, etc.)
+            command_errors=[]
+        elif ignore_missing:
+            command_errors=[err for err in command_errors if 'NO OBJECTS FOUND' not in err.upper() and 'OBJECT DOES NOT EXIST' not in err.upper()]
         errors.extend(command_errors)
         command_warnings=_ma2_feedback_warnings(feedback)
         if ignore_missing:
@@ -424,13 +432,31 @@ def push_ma2_to_onpc(fixtures: dict[str, FixtureDocument], items: list[dict], sc
                 cleanup_files.append(path)
                 import_paths[fixture_file]=fixture_file+'.xml'
 
+            # In overwrite mode, clear the show entirely, then reuse the "all" import logic
+            if mode == 'overwrite':
+                # NewShow creates a blank show file — this is the only reliable way to
+                # remove all fixtures, fixture types, and layers from MA2 via telnet.
+                # /noconfirm is required because MA2 pops up a "Save current show?"
+                # dialog by default, which blocks the telnet session with "INVALID KEY".
+                send_command(sock, 'NewShow "FixtureForge_Clean" /noconfirm', wait=2.0)
+                if errors:
+                    warnings.append('NewShow failed — attempting to unpatch all fixtures as fallback.')
+                    # Fallback: unpatch all fixtures (doesn't truly delete them but clears the patch)
+                    send_command(sock, 'Delete Fixture Thru', wait=0.5, ignore_missing=True)
+                    errors.clear()
+                else:
+                    warnings.append('Created blank show — all fixtures, fixture types, and layers cleared.')
+                # Fall through to "all" mode logic below
+
             wanted={doc.name for doc in fixtures.values()}
             if import_types:
                 for command in ['CD /','CD EditSetup','CD FixtureTypes']:
                     if not send_command(sock, command):
                         break
                 if not errors:
-                    for name in sorted(wanted):
+                    # Delete the FixtureTypes being imported (for replacement)
+                    delete_targets=sorted(wanted)
+                    for name in delete_targets:
                         if not send_command(sock, f'Delete FixtureType "{_ma2_quote(name)}"', ignore_missing=True):
                             break
                     for fixture_file in fixture_files:
