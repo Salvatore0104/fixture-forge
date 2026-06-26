@@ -13,7 +13,7 @@ AppPublisher=Fixture Forge
 DefaultDirName={autopf}\Fixture Forge
 DefaultGroupName=Fixture Forge
 DisableProgramGroupPage=yes
-OutputDir=dist\installer
+OutputDir=..\dist\installer
 OutputBaseFilename=FixtureForge-Setup-{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
@@ -21,14 +21,13 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-Source: "dist\FixtureForge.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\FixtureForge.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Fixture Forge"; Filename: "{app}\{#MyAppExeName}"
