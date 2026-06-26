@@ -38,21 +38,21 @@ def export_ma2(f: FixtureDocument, mode_index=0):
     module = etree.SubElement(modules, f"{{{MA_NS}}}Module", name="Main Module", **{"class":f.category.upper().replace(' ','_')})
     etree.SubElement(etree.SubElement(module, f"{{{MA_NS}}}Body"), f"{{{MA_NS}}}Size", x="0.5", y="0.5", z="0.5")
     for ch in mode.channels:
-        # MA2 XML stores default / highlight_value in the coarse (8-bit) range 0–255.
-        # Scale the full-resolution values down to 8-bit for the XML attributes.
-        coarse_default = round(ch.defaultValue / max_dmx(ch) * 255)
-        coarse_highlight = round(ch.highlightValue / max_dmx(ch) * 255)
-        attrs = {"attribute":ch.attribute,"feature":ch.group,"preset":ch.group,"coarse":str(ch.address),"default":str(coarse_default),"highlight_value":str(coarse_highlight)}
+        # MA2 XML stores default / highlight_value as percentage 0–100 (UI logical value).
+        # Scale the DMX-range values to percentage for the XML attributes.
+        pct_default = round(ch.defaultValue / max_dmx(ch) * 100)
+        pct_highlight = round(ch.highlightValue / max_dmx(ch) * 100)
+        attrs = {"attribute":ch.attribute,"feature":ch.group,"preset":ch.group,"coarse":str(ch.address),"default":str(pct_default),"highlight_value":str(pct_highlight)}
         if ch.resolution >= 16: attrs["fine"] = str(ch.address + 1)
         if ch.resolution >= 24: attrs["ultra"] = str(ch.address + 2)
         if ch.resolution >= 32: attrs["ultimo"] = str(ch.address + 3)
         ct = etree.SubElement(module, f"{{{MA_NS}}}ChannelType", **attrs)
-        # ChannelFunction from/to must also be in coarse (8-bit) range for MA2 XML
+        # ChannelFunction from/to must also be in percentage 0–100 for MA2 XML
         funcs = ch.functions or [type('F',(),{"name":ch.name,"dmxFrom":0,"dmxTo":max_dmx(ch),"physicalFrom":ch.physicalFrom,"physicalTo":ch.physicalTo,"attribute":ch.attribute})()]
         for fn in funcs:
-            coarse_from = round(fn.dmxFrom / max_dmx(ch) * 255)
-            coarse_to = round(fn.dmxTo / max_dmx(ch) * 255)
-            etree.SubElement(ct, f"{{{MA_NS}}}ChannelFunction", name=fn.name, from_=str(coarse_from), to=str(coarse_to), min_dmx_24=str(round(fn.dmxFrom/max_dmx(ch)*16777215)), max_dmx_24=str(round(fn.dmxTo/max_dmx(ch)*16777215)), physfrom=str(fn.physicalFrom), physto=str(fn.physicalTo), attribute=fn.attribute, feature=ch.group, preset=ch.group)
+            pct_from = round(fn.dmxFrom / max_dmx(ch) * 100)
+            pct_to = round(fn.dmxTo / max_dmx(ch) * 100)
+            etree.SubElement(ct, f"{{{MA_NS}}}ChannelFunction", name=fn.name, from_=str(pct_from), to=str(pct_to), min_dmx_24=str(round(fn.dmxFrom/max_dmx(ch)*16777215)), max_dmx_24=str(round(fn.dmxTo/max_dmx(ch)*16777215)), physfrom=str(fn.physicalFrom), physto=str(fn.physicalTo), attribute=fn.attribute, feature=ch.group, preset=ch.group)
     instances = etree.SubElement(ft, f"{{{MA_NS}}}Instances")
     etree.SubElement(instances, f"{{{MA_NS}}}Instance", module_index="0", patch="1", locked="true")
     etree.SubElement(ft, f"{{{MA_NS}}}Wheels")
@@ -71,12 +71,12 @@ def import_ma2(data: bytes):
         if ct.get('ultimo'): res=32
         meta=next((x for x in ATTRIBUTES if x['ma2Attribute']==attr),None)
         max_val=(1<<res)-1
-        # MA2 XML stores values in coarse (8-bit) range; scale up to full resolution
-        scale=lambda v: round(int(v)/255*max_val)
+        # MA2 XML stores values as percentage 0–100; scale up to full DMX resolution
+        scale=lambda v: round(int(v)/100*max_val)
         funcs=[]
         for fn in ct.xpath('./*[local-name()="ChannelFunction"]'):
-            funcs.append({"id":str(uuid.uuid4()),"name":fn.get('name',attr),"dmxFrom":scale(fn.get('from',0)),"dmxTo":scale(fn.get('to',255)),"physicalFrom":float(fn.get('physfrom',0)),"physicalTo":float(fn.get('physto',1)),"attribute":fn.get('attribute',attr)})
-        channels.append({"id":str(uuid.uuid4()),"address":coarse,"attribute":attr,"group":ct.get('feature',meta['maFeature'] if meta else 'CONTROL'),"name":meta['ueAttribute'] if meta else attr,"resolution":res,"byteOrder":"MSB","defaultValue":scale(ct.get('default',0)),"highlightValue":scale(ct.get('highlight_value',255)),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
+            funcs.append({"id":str(uuid.uuid4()),"name":fn.get('name',attr),"dmxFrom":scale(fn.get('from',0)),"dmxTo":scale(fn.get('to',100)),"physicalFrom":float(fn.get('physfrom',0)),"physicalTo":float(fn.get('physto',1)),"attribute":fn.get('attribute',attr)})
+        channels.append({"id":str(uuid.uuid4()),"address":coarse,"attribute":attr,"group":ct.get('feature',meta['maFeature'] if meta else 'CONTROL'),"name":meta['ueAttribute'] if meta else attr,"resolution":res,"byteOrder":"MSB","defaultValue":scale(ct.get('default',0)),"highlightValue":scale(ct.get('highlight_value',100)),"ueAttribute":meta['ueAttribute'] if meta else attr,"functions":funcs})
     return {"id":str(uuid.uuid4()),"schemaVersion":"1.0","revision":0,"name":ft.get('name','瀵煎叆鐏叿'),"shortName":''.join(ft.xpath('./*[local-name()="short_name"]/text()')),"manufacturer":{"id":str(uuid.uuid4()),"name":manufacturer,"shortName":short_m},"category":"Other","version":"1.0","notes":"鐢?MA2 XML 瀵煎叆","modes":[{"id":str(uuid.uuid4()),"name":ft.get('mode','榛樿妯″紡'),"channels":channels}],"wheels":[]}
 
 def export_gdtf(f: FixtureDocument):
