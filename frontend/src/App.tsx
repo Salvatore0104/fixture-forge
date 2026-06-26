@@ -97,6 +97,7 @@ function Workbench(){
   const [selectedPatchIds,setSelectedPatchIds]=useState<string[]>([]);
   const [patchSelectionAnchor,setPatchSelectionAnchor]=useState<string>();
  const [editingPatchId,setEditingPatchId]=useState<string>();
+  const copiedPatchItemsRef=useRef<MvrItem[]>([]);
   const [modeEditorOpen,setModeEditorOpen]=useState(false);
   const [editingModeId,setEditingModeId]=useState<string>();
   const [editingModeName,setEditingModeName]=useState('');
@@ -150,12 +151,67 @@ function Workbench(){
     if (snap) { applyMvrSnapshot(snap); message.info(`已重做：${mvrUndo.lastDescription}`); }
   }, [mvrUndo, applyMvrSnapshot, message]);
 
-  // Ctrl+Z / Ctrl+Y keyboard shortcut for MVR workspace
+  // Ctrl+Z / Ctrl+Y / Ctrl+C / Ctrl+V keyboard shortcuts for MVR workspace
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (workspace !== 'mvr') return;
       const target = e.target as HTMLElement | null;
       if (target?.closest('input,textarea,[contenteditable="true"],.ant-select-dropdown')) return;
+
+      // Ctrl+C: copy selected patch items
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
+        if (!selectedPatchIds.length) return;
+        e.preventDefault();
+        const selectedItems = mvrItems.filter(item => selectedPatchIds.includes(item.id));
+        copiedPatchItemsRef.current = selectedItems.map(item => ({...item}));
+        message.success(`已复制 ${selectedItems.length} 个配接`);
+        return;
+      }
+
+      // Ctrl+V: paste copied patch items
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
+        const copied = copiedPatchItemsRef.current;
+        if (!copied.length) return;
+        e.preventDefault();
+        // Find the last selected item to determine insertion point
+        const sortedSelected = sortedPatchIds(selectedPatchIds, mvrItems);
+        const lastSelectedId = sortedSelected[sortedSelected.length - 1];
+        const insertAfterIndex = lastSelectedId
+          ? mvrItems.findIndex(item => item.id === lastSelectedId)
+          : mvrItems.length - 1;
+
+        // Determine starting address for pasted items
+        const lastSelectedItem = lastSelectedId ? mvrItems.find(item => item.id === lastSelectedId) : mvrItems[mvrItems.length - 1];
+        let cursor = lastSelectedItem
+          ? advancePatchPosition(lastSelectedItem.universe, lastSelectedItem.address, fixtureFootprint(fixtureById.get(lastSelectedItem.fixtureId), lastSelectedItem.modeName))
+          : { universe: 1, address: 1 };
+
+        const pasted: MvrItem[] = [];
+        for (const src of copied) {
+          const footprint = fixtureFootprint(fixtureById.get(src.fixtureId), src.modeName);
+          const pos = normalizePatchPosition(cursor.universe, cursor.address, footprint);
+          pasted.push({
+            ...src,
+            id: uid(),
+            universe: pos.universe,
+            address: pos.address,
+            name: src.name + '_copy',
+          });
+          cursor = advancePatchPosition(pos.universe, pos.address, footprint);
+        }
+
+        // Insert pasted items after the last selected item
+        const nextItems = [...mvrItems];
+        nextItems.splice(insertAfterIndex + 1, 0, ...pasted);
+        pushMvrHistory(mvrItems, `粘贴 ${pasted.length} 个配接`);
+        setMvrItems(nextItems);
+        setSelectedPatchIds(pasted.map(item => item.id));
+        setSelectedPatch(pasted[pasted.length - 1]?.id);
+        setPatchSelectionAnchor(pasted[0]?.id);
+        message.success(`已粘贴 ${pasted.length} 个配接`);
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleMvrUndo();
@@ -166,7 +222,7 @@ function Workbench(){
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [workspace, handleMvrUndo, handleMvrRedo]);
+  }, [workspace, handleMvrUndo, handleMvrRedo, selectedPatchIds, mvrItems, pushMvrHistory, message, fixtureById]);
 
   useEffect(()=>{
     if(!editingPatchId)return;
